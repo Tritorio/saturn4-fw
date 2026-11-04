@@ -113,7 +113,7 @@ dashboard page and test it with a mocked `live.json` (see `CLAUDE.md`).
 
 ## Other board revisions
 
-**This is not only a 12K question.** The 16K itself comes in different board versions with slightly different
+The 16K comes in different board versions with slightly different
 firmwares. That is why a custom firmware must be created from the specific printer's firmware version: this
 repository's guards (exact machine-code checks of V1.5.9) deliberately refuse to run on anything else, and an image
 built for one revision must not be flashed on another.
