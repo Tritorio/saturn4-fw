@@ -1,0 +1,112 @@
+<title>Saturn 4 Ultra Mod Manual</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Roboto+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a technical manual. Sticky contents rail on the left (desktop), one reading column;
+   each feature section = what it does / why it exists / how to use it. Colours from the dashboard. */
+:root {
+  --bg: #f6f7f4; --paper: #ffffff; --ink: #17191a; --ink2: #44494b; --muted: #687072;
+  --line: #dfe3dc; --tint: #eef3ea; --accent: #2f7d18; --accent-ink: #ffffff;
+  --blue: #1f63c7; --warn: #8a5a00; --warn-bg: #fff4dc; --bad: #b42318;
+  --code-bg: #eef0ec;
+  --f-body: Roboto, "Segoe UI", system-ui, -apple-system, sans-serif;
+  --f-mono: "Roboto Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0b0c0b; --paper: #161816; --ink: #f2f3f1; --ink2: #c3c7c2; --muted: #969c95;
+    --line: #2a2e29; --tint: #1b2418; --accent: #79d853; --accent-ink: #0b1a05;
+    --blue: #7fb0ff; --warn: #f0b429; --warn-bg: #2a2310; --bad: #ff7a70;
+    --code-bg: #20231f; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0b0c0b; --paper: #161816; --ink: #f2f3f1; --ink2: #c3c7c2; --muted: #969c95;
+  --line: #2a2e29; --tint: #1b2418; --accent: #79d853; --accent-ink: #0b1a05;
+  --blue: #7fb0ff; --warn: #f0b429; --warn-bg: #2a2310; --bad: #ff7a70;
+  --code-bg: #20231f; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font: 16px/1.6 var(--f-body); }
+a { color: var(--accent); text-underline-offset: 2px; }
+a:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+code, .mono { font-family: var(--f-mono); font-size: .88em; }
+code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+h1, h2, h3 { text-wrap: balance; line-height: 1.25; }
+
+.wrap { max-width: 1180px; margin: 0 auto; padding-block: 32px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 48px; }
+@media (max-width: 880px) { .wrap { grid-template-columns: minmax(0, 1fr); gap: 24px; padding-block: 20px 48px; } }
+
+/* contents */
+nav.toc { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 24px); align-self: start; font-size: 14px; }
+nav.toc .eyebrow { margin-bottom: 8px; }
+nav.toc ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; counter-reset: toc; }
+nav.toc li { counter-increment: toc; }
+nav.toc a { display: grid; grid-template-columns: 26px 1fr; padding: 4px 8px; border-radius: 6px; color: var(--ink2); text-decoration: none; }
+nav.toc a::before { content: counter(toc); color: var(--muted); font-variant-numeric: tabular-nums; }
+nav.toc a:hover { background: var(--tint); color: var(--ink); }
+@media (max-width: 880px) {
+  nav.toc { position: static; background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+  nav.toc ol { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+}
+
+main { min-width: 0; max-width: 760px; }
+.eyebrow { font-size: 12px; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+header.top h1 { font-size: clamp(30px, 5vw, 42px); margin: 6px 0 10px; font-weight: 700; letter-spacing: -.01em; }
+header.top .lead { font-size: 18px; color: var(--ink2); margin: 0 0 18px; max-width: 62ch; }
+.facts { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 8px; padding: 0; list-style: none; }
+.facts li { background: var(--paper); border: 1px solid var(--line); border-radius: 999px; padding: 3px 12px; font-size: 13px; color: var(--ink2); }
+.facts b { color: var(--ink); font-weight: 500; }
+
+section.s { padding-top: 40px; margin-top: 40px; border-top: 1px solid var(--line); scroll-margin-top: 16px; }
+section.s > h2 { font-size: 26px; margin: 4px 0 12px; font-weight: 700; }
+section.s h3 { font-size: 18px; margin: 28px 0 8px; font-weight: 500; }
+section.s p { margin: 0 0 12px; max-width: 68ch; }
+section.s ul, section.s ol { margin: 0 0 12px; padding-left: 22px; max-width: 68ch; }
+section.s li { margin: 3px 0; }
+.where { font-size: 14px; color: var(--muted); margin: -4px 0 14px; }
+
+.why { background: var(--tint); border-radius: 10px; padding: 14px 16px; margin: 16px 0; }
+.why .eyebrow { color: var(--accent); margin-bottom: 4px; }
+.why p:last-child { margin-bottom: 0; }
+.note { background: var(--warn-bg); border-radius: 10px; padding: 12px 16px; margin: 16px 0; font-size: 15px; }
+.note b { color: var(--warn); }
+
+.tbl { overflow-x: auto; margin: 12px 0 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; padding: 8px 12px; border-top: 1px solid var(--line); vertical-align: top; }
+thead th { border-top: 0; font-weight: 500; color: var(--muted); font-size: 12px; letter-spacing: .05em; text-transform: uppercase; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+td code { white-space: nowrap; }
+
+.kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 16px; margin: 8px 0 16px; font-size: 15px; }
+.kv dt { font-weight: 500; }
+.kv dd { margin: 0; color: var(--ink2); }
+@media (max-width: 520px) { .kv { grid-template-columns: minmax(0, 1fr); gap: 2px; } .kv dd { margin-bottom: 8px; } }
+
+pre { background: var(--code-bg); border-radius: 10px; padding: 12px 14px; overflow-x: auto; font: 14px/1.55 var(--f-mono); margin: 8px 0 16px; }
+.chip { display: inline-block; border-radius: 999px; padding: 0 8px; font-size: 13px; font-weight: 500; }
+.c-green { color: var(--accent); border: 1px solid currentColor; }
+.c-blue { color: var(--blue); border: 1px solid currentColor; }
+.c-white { color: var(--ink); border: 1px solid currentColor; }
+
+figure.cycle { margin: 16px 0 20px; background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 14px 14px 10px; overflow-x: auto; }
+figure.cycle svg { display: block; min-width: 640px; width: 100%; height: auto; }
+figure.cycle figcaption { font-size: 13px; color: var(--muted); margin-top: 6px; }
+.svg-ink { fill: var(--ink); } .svg-ink2 { fill: var(--ink2); } .svg-muted { fill: var(--muted); }
+.svg-box { fill: var(--tint); stroke: var(--line); }
+.svg-acc { fill: var(--accent); } .svg-acc-s { stroke: var(--accent); }
+.svg-line { stroke: var(--muted); }
+
+figure.shot { margin: 14px 0 18px; }
+figure.shot img { display: block; max-width: 100%; height: auto; border-radius: 12px; border: 1px solid var(--line); background: #000; }
+figure.shot figcaption { font-size: 13px; color: var(--muted); margin-top: 6px; max-width: 68ch; }
+footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+@media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
+</style>
+
+<div class="wrap">
+<!-- template: tools/make_manual.py takes the head and style of this file -->

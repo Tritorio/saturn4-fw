@@ -1,0 +1,83 @@
+BOARD REPORT (over http, read only)  - Saturn 4 Ultra 16K
+
+== device tree / kernel
+model: INFINITY2M SSC011A-S01A-S
+compatible: sstar,infinity2m
+modules dir: 4.9.84
+os-release: NAME=Buildroot | VERSION=-gf7113b2a8-dirty | ID=buildroot | VERSION_ID=2021.11 | PRETTY_NAME="Buildroot 2021.11"
+
+== flash layout (mtd = NAND, ubi volumes)
+mtd0 393216     IPL0
+mtd1 393216     IPL1
+mtd2 393216     IPL_CUST0
+mtd3 393216     IPL_CUST1
+mtd4 786432     UBOOT0
+mtd5 786432     UBOOT1
+mtd6 262144     ENV
+mtd7 262144     ENV1
+mtd8 131072     KEY_CUST
+mtd9 393216     LOGO
+mtd10 5242880    KERNEL
+mtd11 5242880    RECOVERY
+mtd12 118226944  UBI
+ubi0_0 rootfs       46219264
+ubi0_1 miservice    12697600
+ubi0_2 customer     39870464
+ubi0_3 appconfigs   4317184
+ubi0_4 parameter    4317184
+
+== eMMC (no serial number)
+name=8GTF4R
+manfid=0x000015
+oemid=0x0100
+date=07/2023
+fwrev=0x0600000000000000
+hwrev=0x0
+prv=0x6
+type=MMC
+size_sectors=15269888
+
+== software checksums (stock V1.5.9 values: chitu 116dfee5..., ChituUpgrade.bin 2fa5c763..., ChituFPGA.bin 36ac00b6..., gauge board image b6979fd4...)
+chitu (the app)              629a8c47521dd45e91ff64588898f484 (not the stock value 116dfee5...)
+upgrade_cbd_app_lcd_strain_gauge_1.1.0.bin b6979fd45a811fac2e7a1e74742c9ef9 = stock
+ChituFPGA.bin                36ac00b63562d342d7826a352286582d = stock
+ChituUpgrade.bin (stored)    2fa5c763a49e565b963ec0cf87704762 = stock
+chitu size 2908180 | versions: V1.5.9 V3.0.0
+(a printer that runs the saturn4-fw mod shows the patched chitu 629a8c47... here: not the stock value, expected)
+-- saturn4-fw mod present: 42_mod_8.38_v1_0_normal | 2026-10-27 19:59 UTC | saturn4-fw mod 8.38 RELEASE V1.0 (V1.0 = the content of buil
+
+== USB devices (vendor:product name)
+1d6b:0002 EHCI Host Controller
+a108:2240 UC01 HD Camera
+1a86:8091 USB HUB
+1d6b:0002 EHCI Host Controller
+0bda:c811 802.11ac NIC
+
+== app log: version / FPGA / gauge lines (first 25; request lines and the printer ID are left out)
+[fpga][Debug][128][13584]:fpga power up done = 0
+[fpga][Info][67][14623]:fpga_reboot done = 1, overtimes=9
+[fpga][Info][71][14623]:fpga_lattice_init ok
+[fpga][Debug][142][14623]:fpga reboot done:1
+[fpga_display][Info][182][14623]:FPGA version:3.3, LCD:b3.13，build:8
+[fpga_display][Info][188][14623]:dev_16k fpga_display_get_resolution:10,3b,56,18
+[fpga_display][Info][195][14623]:dev_16k fpga get online:1
+[fpga_display][Info][182][14625]:FPGA version:3.3, LCD:b3.13，build:8
+[fpga_display][Info][188][14625]:dev_16k fpga_display_get_resolution:10,3b,56,18
+[fpga_display][Info][195][14625]:dev_16k fpga get online:1
+[fpga][Info][103][14627]: fpga_resolution_x = 15120
+[fpga][Info][104][14627]: fpga_resolution_y = 6230
+[fpga][Info][105][14627]: fpga online = 1
+[fpga][Debug][152][14627]:fpga init result:
+[fpga][Debug][153][14627]:done = 1
+[fpga][Debug][154][14627]:x, y, z = 15120, 6230, 1
+[fpga][Debug][155][14627]:fpga mylog finish
+[fpga][Info][167][14627]:#########[fpga]: real_x:15120 real_y:6230 x:15120 y:6230 version:51.19 fpga_online 1########
+[fpga][Info][168][14627]:#########[commit]:V1.5.9 --- 502a70902_f7113b2a8 ########
+[tmc2209][Info][99][14635]:tmc2209_init
+[tmc2209][Info][119][14644]:Gconf : 1c0
+[tmc2209][Info][136][14658]:ChopConf : 14000053
+[tmc2209][Info][150][14664]:irun = 25 , ihold = 9
+[fpga_extend][Info][202][14677]:In: f0 = 80 accleration = 11200 df = 60 dt = 0.005700
+[fpga_extend][Info][213][14693]:TABLE PARAM 20 624999 15 284999
+
+END OF REPORT

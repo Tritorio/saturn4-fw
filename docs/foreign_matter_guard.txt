@@ -1,0 +1,53 @@
+FOREIGN MATTER ("foregin") GUARD, SG THRESHOLDS AND THE PRINT START SEQUENCE (chitu V1.5.9, RE + live reads 2026-10-21)
+===================================================================================================================
+
+SETTINGS (machine file M5000 lines; JSON name; ref offset / LIVE offset in the struct at 0x39fa30; units = app units, 1 ~ 1 g)
+  I205 E  sg_leveing_ths          level press target      live +0x224 i32   stock 7750, user 4000
+  (no gcode line) sg_release_ths  release, max count 5 (+0x228, +0x22c)      1000
+  I206 C  sg_foregin_triger_ths   foreign matter limit    live +0x230 i32   stock 3000, user 5000 (3000 asked 2026-10-21)
+  (no gcode line) sg_foregin_release_ths +0x234                              500
+  I204 E  sg_resin_probe_ths 55 (probe, resin touch), I203 E 50 (calibrate "stationary" threshold)
+  The ref (file) layout differs from the live layout (file struct = floats, live = ints/doubles): ref 0x1c8.. -> live 0x224..
+
+WHAT THE GUARD IS
+  axis_is_sg_trigered 0x53ab8, called from the axis step loop 0x53bcc (thread loop 0x557c0: axis 0, axis 1, usleep 10 ms)
+  for AXIS 0 (Z) only, when the axis' SG endstop flag [axis+0x64] is 1 (set once by axis init 0x5336c, never cleared).
+  Compares the gauge value "zero_data" (relative to the calibrate zero; struct from 0x8106c, field +0x10 = the value
+  the level log prints as zero_data) with live+0x230. Acts only for a NEGATIVE step (plate going down); a counter
+  [axis+0xa8..0xac] adds 2 per check above the limit, resets at a check below it (or for an up step), trips at count > 49
+  = about 26 consecutive checks. Trip = log "sg_trig 1/2", axis queue reset, move stopped.
+  ARMED only after the first sg calibration of the session: flag 0x2fdc58+0x5c (read by 0x81030) is set by 0x80ffc at
+  "sg_calibrate done" and never cleared. App log: SG_CMD_START_CALIBRATE_SKIP_HOME ~25-50 s after boot, and "start
+  calibrate!!!" at every print start. Before that (boot, Z homing) the guard returns "not triggered".
+  In the resin probe the probe code itself (0x7dd58..0x7dd80) fails the probe ("probe1 failed zero_data %d ths %d") if
+  the reading is above the limit: success = 55 < reading <= limit.
+  EVIDENCE the guard does NOT stop levelling: the stock limit 3000 is far below the stock level target 7750, the level
+  press passes it on every print and works. A 0.05 mm level step is a single short move (~0.17 s, 1-2 checks), far from
+  26 checks. (My first model, "5000 above 4000 so levelling does not trip it", was wrong as a reason: it never trips.)
+  Peel (tilt axis 1) is never checked; Z is idle while the plate peels.
+
+PRINT START SEQUENCE (app log 2026-10-19, times in ms ticks) and the guard
+  0 CALIBRATE  "start calibrate" plate parked 220 mm, 5.0 s, zero averaged            guard armed, nothing to check
+  1 PROBE a    Z 220 -> 49 mm down at 5 mm/s (axis_move 49.0, 78400 steps), 37.8 s     checking (down)
+  2 PROBE b    49 -> ~16.8 mm down at 2.5 mm/s until reading > 55 (resin touch), 13.4 s checking; > limit = probe fails
+  3 back-off   to 16.45 mm (-0.3 mm)                                                    checking
+  4 HEAT       (only with heating before the print) up to 18 mm / down to 5 mm at 5 mm/s, repeated, "HEAT OVER" 7.5 min  down legs checked
+  5 LEVEL a    "start level" at 5.00 mm, 5 s still ("sg_level still done")             armed, idle
+  6 LEVEL b    36 steps of -0.05 mm at 2 mm/s, one per ~1 s, 5.00 -> 3.25 mm; zero_data 305 -> 4414, done > 4000
+  Dashboard diagram: artifact https://claude.ai/artifact/DiRiX1qnLjzE6WxUt5WrAx (version 2 corrects the level press to
+  "armed, never trips with stock settings").
+
+HOW THE LIVE STRUCT WAS READ (read only, over telnet): dd on /proc/<chitu pid with libsgtap>/mem at 0x39fa30 (0x28c bytes)
+  decoded on the PC; axis structs at *(0x2fa124 + 4*axis) (+0x64 SG flag, +0xa4 type); SG state 0x2fdc58 (+0x5c calibrated
+  flag, +0x60 zero). machine_param_ref.bin layout + CRC: the project notes "MACHINE SETTINGS FILE" notes, machlib.tcl.
+
+OTHER FINDINGS OF THE SESSION (RE, 2026-10-21)
+  - Print progress: the printer screen shows layer / total layers (0x418cc); SDCP TotalTicks is a time estimate recomputed at
+    every layer change (log "printer_recalculate_print_time", 0x7c908 -> estimator 0x79558: sum over the remaining layers of
+    exposure + waits + movement, movement = Z time + the I212 X time in rotation mode 1/2, max() in mode 0; I212 A/B slow,
+    C/D fast, before/after N) -> too long when the dynamic wait shortens the waits.
+  - Layer block names (the app's "execute:" log format 0x26c694): P+0x24c exposure_time, +0x250 light_off_time, +0x254
+    rest_time_before_lift, +0x258 rest_time_after_lift, +0x25c rest_time_after_drop (the wait the dynamic wait shortens).
+  - X motor current: live +0x101 hold, +0x102 run, +0x103 step, +0x104 interval ms (ramp thread 0x8186c / 0x817d8, driver
+    state 0x2fdd00); Z hold/run bytes +0x248/+0x249.
+  - Tilt geometry: 140 deg motor = 3 deg vat, vat angle ~ A (1 - cos x), A = 1.699 deg (user's model).

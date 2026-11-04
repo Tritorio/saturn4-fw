@@ -1,0 +1,85 @@
+STRAIN-GAUGE BOARD PROTOCOL (step 8.3b, from libsgtap captures, 2026-10-15)
+==========================================================================
+Source: build/sgcap/boot2.bin (idle after boot, image 9), decoded with
+tools/sgcap_decode.py. Still to capture: probe/levelling and a real print.
+
+LINK
+- /dev/ttyS1, 115200 8N1 raw (cflag 0o16262), opened by chitu at startup.
+- Board firmware: at every boot chitu sends
+  /customer/resources/upgrade_cbd_app_lcd_strain_gauge_1.1.0.bin by YMODEM
+  (block 0 = "upgrade_cbd_app_lcd_strain_gauge_1.1.0.bin\0" + size 16296, then 1029-byte
+  STX blocks). The board answers CAN (0x18) twice = already up to date -> port closed
+  and reopened for normal use.
+
+POLLING (idle; the only traffic seen so far)
+- Request  (app -> board), every ~197 ms (~5 Hz):   01 03 43 2b
+     01 = address/start, 03 = read command, 43 2b = CRC
+- Response (board -> app), 9 bytes, arrives as "01" + 8 bytes:
+     01 03 04 v0 v1 v2 v3 c0 c1
+     04 = payload length, v0..v3 = signed int32 little endian = raw reading
+- CRC: CRC-16/KERMIT (poly 0x1021, init 0x0000, reflected in+out, xorout 0),
+  over the whole frame from the first byte (01) up to the payload. Sent low byte
+  first in the REQUEST (43 2b) but HIGH byte first in the RESPONSE (crc 0x51aa -> 51 aa).
+  Verified on the request and on all 2624 responses of the dry-run print.
+- Idle values: about -379,390 .. -379,615 (no load on the plate / tare offset);
+  first response after boot = 0. Units unknown yet (raw ADC counts). The app
+  subtracts a zero (log: "sg_handle_level scaled_raw_data %d zero_data %d",
+  "sg_handle_probe : %d ths %d") -> calibrate against those log lines.
+
+OTHER PORTS (not the gauge)
+- /dev/ttyS3 115200: frames "05 03 ..." / "05 ff ...", ~150 B/s rx at boot (another
+  board, probably motion/Z or the LCD/UV controller).
+- /dev/ttyS2 115200: frames "09 23 ...", ~1 B/s.
+
+DRY-RUN PRINT (no resin, user pressed the plate by hand for probe + level), 2026-10-15
+Files: build/sgcap/print1.bin + print1_applog.txt (git-ignored)
+- During the whole print ttyS1 carries ONLY the 5 Hz polling (2624 polls, interval
+  median 197 ms, max 306 ms). No other commands: calibrate / probe / level / peel logic
+  is all inside chitu, on the same readings.
+- The app's log tick ([module][level][line][TICK]) = CLOCK_MONOTONIC in ms: events in
+  log1 line up exactly with our capture timestamps.
+- App units: scaled = raw / 100 (log "scaled_raw_data -3791" <-> raw ~ -379,100).
+  App values are relative to a zero taken just before: probe logged 1954 = reading
+  -1839 minus baseline -3793. Thresholds: probe ths 55, level sg_ths 4000.
+  Physical unit unknown (maybe grams if the board is calibrated; not verified).
+  CALIBRATION (user, 2026-10-17): calibrate-phase average with vs without the build
+  plate differs by ~130,000 raw; plate weighs ~1400 g -> ~92.9 raw counts per gram
+  (one-point, assumes linear; rough: both numbers rounded).
+  FINE CALIBRATION (2026-10-17 12:47 UTC, tools/sglive.py [removed 2026-10-18] -> backups/sglog/calib/):
+  zero = mean of 30 readings -375,453.1 (sd 28); 373.85 g reference weight applied:
+  mean -412,963.0 (137 readings, sd 41) -> delta -37,509.9 -> k = 100.33 raw/g
+  (the logger default; 92.86 read ~8% high). Later: K = 100.252 on the printer. Creep under load
+  ~ -84 raw (~0.8 g) in 25 s.
+  Linearity check, fresh zero before each weight (same session):
+    177.80 g -> -17,793.7 raw (100.08/g) | 373.85 g -> -37,509.9 (100.33/g)
+    445.15 g -> -44,600.3 raw (100.19/g)
+    Fit with offset: k 100.33, offset -0.35 g. With k = 100.33 all read within 0.6 g.
+    After unloading, the reading stays ~0.7-1.4 g off zero for >30 s (slow return).
+  Only checked up to 445 g; forces in use reach ~4 kg (level). App units (raw/100): 1 unit ~ 1.00 g. So probe ths 55
+  ~ 55 g, level sg_ths 4000 ~ 4.0 kg.
+  SIGN: weight on the plate -> raw DECREASES. Plate pushed up (levelling) -> positive
+  values; a real peel (plate pulled down toward the vat) -> NEGATIVE values.
+- Idle baseline drifts slowly (-3797 -> -3789 in 8 min): take the zero per session.
+- Sequence (log): printer_main_routine enter -> "start calibrate!!!" (5 s) ->
+  "start probe!!!" (resin level, plate goes down until delta > ths) -> "start level!!!"
+  -> "level done!!!" -> per layer: "layer N:", "cs1237_recoder_start 0" (exposure),
+  "lifting = 1" + "cs1237_recoder_start 1" (lift/peel), "lifting = 2" (drop).
+  (CS1237 = the 24-bit ADC chip on the gauge board.)
+- Dry run layers: delta only +-1..2 (no resin -> no peel force), as expected.
+- Print end (user stopped after ~10 layers): msgbox button lines, then
+  "printer_image_parse_routine exit" + "printer_main_routine exit". Session markers:
+  START = "printer_main_routine enter", END = "printer_main_routine exit".
+- Per layer phases: "layer N:" -> "printer start exposure" -> "cs1237_recoder_stop 0" ->
+  "lifting = 1" (lift/peel) -> "lifting = 2" (drop) -> "lifting = 4/3" (done) ->
+  "cs1237_recoder_stop 1".
+- The print file name is NOT in the log -> take it from the app's open64() of
+  *.ctb/*.goo/... in libsgtap.
+
+REPLY LATENCY (measured 2026-10-24 from the raw captures backups/sglog/sgcap/cap_*.bin, 20,000+ request/reply pairs, tools/sgcap_decode.py records)
+- The board does NOT answer at once: the first byte arrives 167.0 ms (median; p10 165.0, p90 167.2 ms) after the request, the complete 9-byte reply 177.1 ms after it
+  (the reply comes as "01" + 8 bytes ~10 ms apart). The spread is only about +-2 ms: a fixed measurement window on the board, started or completed by each request.
+- The app's poll interval (196.7 ms) = that 177 ms + ~20 ms of its own. The polling rate cannot be raised beyond ~5.6 Hz with this board firmware: a request sent earlier
+  would find the board still busy. A higher rate needs the BOARD to change (ADC output rate / number of conversions averaged), i.e. the board firmware
+  /customer/resources/upgrade_cbd_app_lcd_strain_gauge_1.1.0.bin (16296 bytes, flashed over YMODEM by the app at every boot); not touched, not analysed yet.
+- Time resolution: each reading covers about the 167 ms before the reply (if the board averages) or is one conversion at the end of that window (if it samples once):
+  unknown which. Either way the time stamp of a reading is uncertain by up to about +-85 ms.

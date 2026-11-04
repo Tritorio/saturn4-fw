@@ -1,0 +1,43 @@
+EXPOSURE TIMES: VISUALIZE + EDIT ON THE FLY - read-only RE 2026-10-25 (chitu V1.5.9, nothing built, printer untouched)
+Goal (user): show the exposure times and make them manually editable during a print.
+
+FINDINGS
+- The END of an exposure is decided in the print step handler (state P+0x30c == 1 = exposing) at 0x7d17c..0x7d1a4:
+  elapsed = now_ms() - (u64)P+0x338 (exposure start), converted to float, compared with the float P+0x24c (exposure_time, ms):
+  elapsed <= P+0x24c -> keep polling (b 0x7cff8); else P+0x30c = 0, 0x81b64(1) / 0x81be4(1,0) = fan / UV off,
+  log "cs1237_recoder_stop 0", 0x81278 (recorder stop), then the layer is finished. The value is re-read on EVERY pass, so a write to
+  P+0x24c takes effect inside the running exposure: longer = it just goes on, shorter than the elapsed time = it ends at the next pass.
+  Same technique as the dynamic wait (P+0x25c, docs/dynamic_wait.txt). P = *(u32*)0x2eb6d8.
+- P+0x220..0x25f is the CURRENT layer block, loaded from the print file's layer table per layer (no direct store to +0x24c in the text:
+  filled by a block copy via 0x6d560(P+0x10c, layer, buf)). An override therefore has to be re-applied at the start of every exposure
+  (P+0x30c 0 -> 1 / new P+0x338), like the wait override.
+- Second consumer, 0x7d0a0 (normal layer path) and 0x7d570 (bottom path): compares the elapsed time with "cur p_time" (float s at
+  0x2fda88+0x28, set from a table at 0x39fe78+0xa70+type*0x20+4 for bottom (0) / transition (1) / normal (2), log "[%d] cur p_time : %f",
+  "normal layer[%d] etime", "tran layer[%d] etime"). It drives the image/sub-step handling, NOT the UV end; role not fully clear -> must
+  be checked in a dry run whether it needs the same value (e.g. read it live next to P+0x24c during a dry-run layer).
+- Layer classes: P+0x110 = bottom layer count, P+0x114 (u16) = transition layer count; layer < P+0x110 bottom, < +0x114 transition, else normal.
+- The file settings on the heap (docs/dynamic_wait.txt, 0xCAFEBABE block): +0x28 exposure, +0x2c bottom exposure, +0x34 bottom layer count.
+- Visualization data: planned per layer = bottom count / transition count / normal + the three times (file) or the layer table; measured per
+  layer = app log 'printer start exposure' .. 'cs1237_recoder_stop 0' ticks (same CLOCK_MONOTONIC), or our own timestamps in sgwait.c.
+
+PROPOSED DESIGN (not confirmed by the user)
+- libsgtap (sgwait.c style): at each exposure start read the original P+0x24c, store it (planned), apply the override (bottom / normal),
+  record planned + used per layer (ring like the last-waits list) -> live.json; command 'expo ...' from the page; "this running layer too"
+  = write P+0x24c now. Kill switch file. Guard: code-word check of 0x7d194 (vldr s15,[r4,#0x24c]) like the other hooks.
+- Page: card with a step chart (planned vs used, current layer marker), editable fields, Revert to file; part of the Settings snapshot.
+TO CHECK BEFORE BUILDING: the cur p_time role, the transition layers (graded times), what else reads P+0x24c (remaining-time estimate,
+UV on/off timing), a dry run with a long exposure (write P+0x24c mid-exposure and read the app log).
+
+LIVE OBSERVATION 2026-10-25 (real print, read-only, tools/expo_obs.sh, raw: backups/expo/obs_*.txt; 2 bottom layers, 0 transition layers, user's wait override 600 s ceiling active)
+- P+0x24c is loaded per layer EARLY (about 0.3-0.4 s after the layer's state byte P+0x30b becomes 1, i.e. before lift / wait / exposure): layers 0-1 = 10000.0 ms
+  (bottom), layer 2 = 4500.0 ms (normal). P+0x254 rest_time_before_lift 4000 -> 2000 in the same load, P+0x25c = 30000 (wait), light-off P+0x250 = 0.
+- Exposure phase = P+0x30c == 1: layer 0 10.05 s, layer 1 10.05 s, layer 2 4.74 s (sample step 0.25 s) = P+0x24c + the poll latency. Confirms the end test.
+- "cur p_time" (0x2fda88+0x20..0x28) stays 0 in this job (no transition layers): it is not involved in a normal / bottom layer.
+- P+0x110 = 2 = bottom count, P+0x114 = 0 transition. Transition grading is NOT observed yet (needs a job with transition layers).
+- NOT tested: a write to P+0x24c (no write has been done to the app so far).
+
+WRITE TEST 2026-10-25 19:2x (user OK, real print, layer 9 (P+0x2ac = 9, a normal layer), tools/expo_write_once.sh): in the wait (P+0x30b == 2) P+0x24c 4500.0 -> 5000.0 ms
+(dd to /proc/PID/mem, 4 bytes, aligned). RESULT: the app log shows 'printer start exposure 18025639' .. 'cs1237_recoder_stop 0' 18030647 = 5008 ms for layer 9; the neighbours
+4504-4508 ms (layers 7, 8, 10, 11). Layer 10 loaded 4500 again (the app reloads the block each layer, as expected) -> the override has to be re-applied at every
+layer; one write per layer in the wait is enough (and takes effect before the UV starts). The wait value written by sgwait (P+0x25c) was not disturbed.
+NEXT: library feature (sgwait.c style) + page card (mockup Z6), then a test with transition layers (grading unknown).

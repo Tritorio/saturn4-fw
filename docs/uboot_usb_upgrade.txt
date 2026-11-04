@@ -1,0 +1,101 @@
+U-BOOT USB UPGRADE - STATIC ANALYSIS (step 1.3 of the project notes)
+===================================================================
+Source: U-Boot chunk of ChituUpgrade.bin V1.5.9 (work/raw/uboot.bin), XZ-decompressed
+to build/re/uboot.raw, ARM mode, linked at 0x23e00000.
+Tool: tools/re/xref.py (capstone; string xrefs / disassembly / callers).
+No hardware involved.
+
+1. WHEN IS THE USB CHECKED?  -> on EVERY boot, before Linux
+------------------------------------------------------------
+- init_sequence_r ends with run_main_loop (0x23e03468) -> main_loop (0x23e00ff0)
+  -> board function 0x23e01790 (LCD/backlight init from env, then upgrade check).
+- 0x23e01d84..0x23e01de8:
+      s = getenv("UpgradeStatus")
+      if s == NULL: setenv UpgradeStatus 0; setenv UpgradeDone 0; saveenv; s = "0"
+      if s == "0":  run "usbstar"                 <- USB upgrade attempt
+      else:         setenv UpgradeStatus 0; saveenv  (skip USB for this one boot)
+      if getenv("EMMCUpgradeEnable") == "1": run "sdstar"  (SD card variant)
+- No key press and no Linux involvement. Only the env variable UpgradeStatus can
+  skip it, and only for one boot.
+- UPDATE 2026-10-27: sdstar passes mode 1 to the same upgrade function
+  (0x23e1b324). It reads the script with "fatload mmc 0 ... ChituUpgrade.bin",
+  then follows the same version gate and flash path. The stock image has
+  #upgrade_force=1. The printer's /media/mmcblk0p1/ChituUpgrade.bin has the
+  exact stock MD5 2fa5c763a49e565b963ec0cf87704762. The internal restore
+  path is statically confirmed; an actual eMMC-triggered flash was run by the user 2026-10-27 (worked).
+  RE 2026-10-27 (Claude, build/re/upgrade_func.s): function arg 0 = usb, 1 = "setenv UpgradeDev
+  mmc" -> "fatload mmc 0 <addr> $UpgradeImage 0x4000 0x0" (UpgradeImage = ChituUpgrade.bin, the
+  FAT partition of eMMC = /media/mmcblk0p1). The strings EmmcUpgradeEnable / "fatload mmc 1" /
+  SigmastarUpgradeEMMC.bin belong to a different SD-card function, not to sdstar. EMMCUpgradeEnable
+  is cleared only on SUCCESS (with UpgradeStatus 1); a failed flash leaves it at 1 = retry at every
+  boot, but usbstar runs first at each boot, so a stock USB stick still recovers. The vendor app
+  arms the same way itself (chitu: setenv("EMMCUpgradeEnable","1") = /etc/fw_setenv, then
+  "shutdown_tip" + GPIO power sequence, in its OTA flow after downloading the zip to
+  /media/mmcblk0p1); the mod only reboots with /sbin/reboot (not analysed: shutdown_tip, the
+  vendor GPIO sequence).
+
+2. WHAT "usbstar" DOES (0x23e1b324)
+-----------------------------------
+- UpgradeImage = env UsbUpgradeImage or "ChituUpgrade.bin" (saved to env).
+- "usb start 0"; if that fails "usb start 1" (2nd USB port).
+- fatload usb 0 <addr> ChituUpgrade.bin 0x4000 0x0  (first 16 KB = script, FAT root).
+  Not found / no stick -> return -> normal boot.
+- Version gate, upgrade continues if ANY of:
+    * #upgrade_bin_version= missing or not parseable
+    * #upgrade_force= missing, or equal to "1"
+    * env CurrentVersion < upgrade_bin_version
+  otherwise prints "version check can't pass" and boots normally.
+- Shows the boot logo + progress bar, then runs the script line by line
+  (run_command). Lines starting with '#' are comments; '%' ends the script.
+- If ANY command returns an error: prints "Upgrade ChituUpgrade.bin fail",
+  STOPS the script, returns to normal boot. Commands already executed stay done.
+  UpgradeStatus stays "0" -> next boot with the stick retries.
+- On success: setenv UpgradeStatus 1, UpgradeDone 1, EMMCUpgradeEnable 0,
+  CurrentVersion <ver>; saveenv.
+
+3. !!! crccheck IS A NO-OP !!!
+------------------------------
+- The "crccheck" command (0x23e068fc) only prints
+  "CONFIG_UPGRADE_CRC_CHECK disable,skip CRC" and returns success.
+- => The printer does NOT verify the data it reads from the USB stick.
+  A corrupted copy on the stick gets written to NAND as-is.
+- => ALWAYS verify md5 of ChituUpgrade.bin ON THE STICK before flashing:
+     md5sum /mnt/<stick>/ChituUpgrade.bin   vs   md5 printed by tools/pack.py
+  (also for the stock recovery image: the stock script rewrites IPL and U-Boot,
+  a bad read there is the one thing that could brick the board.)
+
+4. AFTER THE UPGRADE (Linux side, /customer/resources/chitu)
+------------------------------------------------------------
+- Next boot: UpgradeStatus == "1" -> U-Boot skips USB and resets it to "0".
+- The chitu app reads UpgradeDone and renames ChituUpgrade.bin on the stick to
+  ChituUpgrade00.bin ("core_handle UpgradeDone" / "rename ChituUpgrade.bin fail").
+  That is what prevents a reflash loop.
+- If the app does NOT start (broken image), the file is not renamed: with the stick
+  left in, U-Boot reflashes it every second boot. Harmless but slow -> after a
+  flash, remove the stick when the progress bar is done.
+- ChituFPGA.bin is NOT handled by U-Boot. The app reads it from USB, compares the
+  FPGA version ("already new fw") and flashes the FPGA itself. Not needed for our
+  tests -> leave it off the test sticks.
+
+OBSERVED ON THE PRINTER (2026-10-15, out/1_identical_repack = stock bytes):
+- After writing, the printer restarts by itself and boots normally (this is the
+  boot where UpgradeStatus==1 -> USB skipped once, then reset to 0).
+- The file on the stick was NOT renamed (still ChituUpgrade.bin), although the app
+  contains the rename code ("rename %s -> %s", "can't find usb disk",
+  "rename ChituUpgrade.bin fail; USB disk unmount!"). Condition not yet analysed
+  (maybe USB not mounted yet when the app checks UpgradeDone).
+  UPDATE (app log, docs/live_system.txt): it is a race. Later flashes renamed OK,
+  one logged "rename ChituUpgrade.bin fail; USB disk unmount!" (stick not mounted yet).
+- => With the stick still inserted, the NEXT power-on reflashes again
+  (UpgradeStatus is 0 again, upgrade_force=1). RULE: remove the stick as soon as the
+  printer has restarted after a flash.
+
+5. CONSEQUENCES FOR THE TEST PLAN
+---------------------------------
+- Recovery path confirmed (statically): stock ChituUpgrade.bin on a FAT32 stick at
+  power-on reflashes the printer even if Linux / the app is broken, as long as
+  IPL / IPL_CUST / U-Boot / env are intact.
+- Recovery requires UpgradeStatus == "0": if a power-on does nothing, power-cycle
+  once more (the boot right after a successful upgrade skips USB).
+- The "safe" test image (customer volume only) never touches the boot chain or env
+  layout: worst case = app doesn't start -> reflash stock from USB.

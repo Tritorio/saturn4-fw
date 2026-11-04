@@ -1,0 +1,94 @@
+RESIN TANK HEATING IN THE STOCK APP (V1.5.9 chitu, static RE 2026-10-19, verified live)
+============================================================================================
+chitu is non-PIE ARM (A32) code, addresses below are fixed virtual addresses.
+Helper used: scratch ax.py (movw/movt + [reg,#imm] xrefs); same idea as tools/re/xref.py.
+
+SETTINGS FILES (/media/mmcblk0p1, vfat)
+- The app reads ONLY the *_ref.bin files (machine_param_ref.bin, ui_param_ref.bin) at boot
+  (func 0x681c4) and rewrites them on every settings change. machine_param.bin / ui_param.bin
+  paths exist in the binary but the files are not used on this printer.
+- Container = records [id u16 BE][len][data]:
+    len byte < 0x80 -> length; else (len & 0x7f) = N following bytes, length = SUM of them
+    (e.g. 85 ff ff ff ff a1 = 4*255+161 = 1181).
+  machine: id 0001 = JSON, id 0002 = CRC;  ui: id 0003 = JSON, id 0004 = CRC.
+  CRC record: 2 bytes, CRC-16/KERMIT (poly 0x1021 reflected, init 0) of the JSON text,
+  stored low byte first (same CRC as the gauge board). Bad CRC -> "crc failed" ->
+  the app uses DEFAULT parameters (would lose this printer's tuning) => never hand-edit.
+- Writer: machine 0x66c1c(path) = live->ref copy (0x65478), JSON, CRC, fopen "wb+",
+  fflush, fsync. ui writer 0x67e30. Locked wrappers (mutex 0x2fd64c):
+    0x686f4 save machine_param_ref.bin   (25 callers in the app)
+    0x68728 save ui_param_ref.bin        (59 callers)
+
+STRUCTS
+  descriptor tables {name, offset, size, type, ...} 0x20 bytes per entry:
+    ui 0x2dfb1c (36 entries, struct 0x34a618, 0xa8 B), machine 0x2dffc8 (127, 0x34a6c0, 0x28c B)
+  The parsed ("ref") structs are copied to LIVE structs used by the app:
+    ui live 0x39fe78 (copy 0x67754, back 0x65148), machine live 0x39fa30 (copy in 0x66d80,
+    back 0x65478).
+
+  field                              file  ref addr   LIVE addr        default
+  tank_heat_switch (u8)              ui    0x34a61c   0x39fe8c (+0x14)  0   heat while printing
+  (pre-heat active, u8, NOT saved)   -     -          0x39fe8d (+0x15)  0   RAM only
+  tank_temperature_max_limit (i32)   mach  0x34a7a0   0x39fbc4 (+0x194) 60
+  tank_temperature_target (i32)      mach  0x34a7a4   0x39fbc8 (+0x198) 40  print target
+  tank_pre_heat_max_time (i32)       mach  0x34a7a8   0x39fbcc (+0x19c) 1440
+  tank_pre_heat_temperature_target   mach  0x34a7ac   0x39fbd0 (+0x1a0) 30  pre-heat target
+  Live +0x194..+0x1a3 <-> ref +0xe0..+0xef are copied as one 16-byte block both ways.
+
+HEATER LOGIC
+- 0x4dcc0 target(): state (0xbdab8()) == 0xa (printing) ? live+0x198 : live+0x1a0
+  (this is also SDCP TempTargetTank).
+- 0x4cad0: printing -> heats only if tank_heat_switch; not printing -> only if pre-heat flag.
+- Heater module struct 0x2fed38: +0 sensor present, +4 tank temp (float), +0x118 ok flag,
+  +0x114 heater mode (0 off, 3 pre-heat; setter 0x8aae0, getter 0x8aad0).
+- Touch-screen toggle handler (in 0x48840):
+    pre-heat ON: needs sensor (+0) and ok (+0x118) and temp < max limit, else a popup;
+                 then mode=3 (0x8aae0(3)), flag +0x15 = 1, save ui (0x68728).
+    pre-heat OFF: 0x8aae0(0), flag = 0.  The app stops pre-heat at print start
+                 ("start print stop pre heat").
+    heat-while-printing: toggles +0x14, save ui.
+- No direct store to live+0x198/+0x1a0 found by the xref scan (only the loader), BUT the
+  stock config G-code path does set them: the user set 40 C with a printer-settings file
+  (USB stick S4U_121026.gcode, copy in the session scratchpad only):
+    M5000 I7 E40   resin target temperature (= tank_temperature_target)
+    M5000 I7 F30   preheat target temperature (= tank_pre_heat_temperature_target)
+    M5000 I7 S1440 max preheat duration (min), P35 single-cycle limit (min),
+    R1 / T2 allowed +/- error (C), X/Y/Z temperature compensation 1-10/10-20/20+,
+    I7 D60 upper vat-temperature limit, I215 * = stirring moves while heating.
+  (the M5000 parser writes through computed pointers, which the scan does not follow).
+
+DASHBOARD (8.9, mods/src/sgtap/sgheat.c): libsgtap runs inside chitu, so it does exactly what
+the touch screen does: write the live fields, then call the app's own savers 0x686f4/0x68728
+(correct format + CRC + mutex). Guard: 39 code words of V1.5.9 are compared first; any
+mismatch (other app version) or /customer/mod/sgheat_disable -> heating off, "heat": null.
+Printer state word 0x30280c (10 = printing, live check: 3 / 10 while printing).
+
+LIVE CHECK 2026-10-19 (read-only, dd of /proc/<chitu>/mem over telnet, pid 748)
+- live 0x39fbc4 and ref 0x34a7a0: 60 40 1440 30 (= max limit, print target, pre-heat max
+  time, pre-heat target) -> addresses confirmed.
+- ui live +0x10..: 01 00 00 01 01 00 = language 1, guide 0, beep 0, light 1,
+  tank_heat_switch 1 (on; the 2026-10-15 backup had 0), pre-heat flag 0. ref the same.
+- heater 0x2fed38: sensor present 1, tank 37.5 C; mode (+0x114) 0, ok (+0x118) 1.
+- code at 0x4dcc0 = e92d4010 eb01bf7b e30f3a30 e3403039 e350000a 05930198 159301a0 e8bd8010
+  (use as the binary-identity guard in libsgtap).
+
+LOG OF A REAL PRINT 2026-10-19 (log2, ms since boot; pre-heat switched on by the user on the
+touch screen before the job)
+- 163467 "state:3,last:0" + "first pre contorl"  = pre-heat on (heater state 3).
+- 673168 "heat_control off"                       = pre-heat ended (8.5 min later).
+- 1463410 printer_main_routine enter (job start).
+- 1527283 "---ui_param.tank_heat_switch:1", "true heat target: = 40", "fake heat target: = 40",
+  "state:1,last:0", "first heat contorl" = print heating towards tank_temperature_target.
+- then per layer: "heat start" / "state:2" / "heat_control on" ... "heat end 1" / "state:0",
+  ~7-10 s of heating every ~40 s; sensor 37.1 -> 37.9 C at 2.41e6 ms.
+=> heater states: 0 off, 1 print warm-up, 2 heating pulse during the print, 3 pre-heat.
+   The touch-screen "pre-heat" is the RAM flag (+0x15); heating during the print is
+   tank_heat_switch (+0x14) with target tank_temperature_target (40).
+
+HEATER DRIVE (RE 2026-11-01, user question "voltage and current of the vat heating?"): NOT in the firmware. The tank_temp_sensor thread (func 0x89f28)
+  switches the heater with the app's PWM function 0x883a8(4, 0x64) = ON (100 %) and 0x883a8(4, 0) = OFF (log "heat_control on" / "heat_control off");
+  app ch4 = table entry (6, 200) = board-link channel 2 (frame fe 04 02 <period> <duty>, same link as the fan = link ch1; UV = SoC pwm0). Only 0 / 100 %,
+  pulses of ~7-10 s every ~40 s in a print. No current / voltage sensing or setting exists in the app (machine file: only temperature targets / limits, pre-heat
+  time, stirring moves). Voltage / power = hardware (supply rail + switch on the main board). Photo Pics/Saturn 4 Ultra 16k PCB.jpg (main board V2.1.5 module
+  with SigmaStar SSD202D, Samsung eMMC, FPGA module with the LCD flex, two stepper drivers with heatsinks, connectors IR TEMP / RES TEMP, green DC input terminal,
+  bulk capacitors rated 35 V = rail probably ~24 V, NOT confirmed): power transistors / connector column at the right edge probably switch UV / fans / heater, not identified.

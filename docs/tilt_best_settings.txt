@@ -1,0 +1,30 @@
+TILT (X) MOTOR - BEST OUTCOME SO FAR, SAVED FOR FUTURE DEVELOPMENT (2026-10-23)
+=================================================================================
+Background: docs/tilt_motor.txt (register dump, driver rows, all listening tests). The topic is ON HOLD (user 2026-10-23): nothing made a big difference. This file keeps the
+best result so it can be picked up later (e.g. a boot-time opt-in setting, step 3 of the plan).
+
+BEST (user, dry run, by ear and by feel in the vat): MICROSTEP WAVE sin t - 0.09 sin 3t  ("seems a bit better", tiny steps felt less) on the otherwise STOCK driver
+  (StealthChop on, IRUN 29 = the machine setting, CHOPCONF 0x100c3, PWMCONF 0x504c8). The opposite sign (+9 %) was clearly WORSE ("feeling more the steps"), +-3 % not audible.
+  Apply (live, lost at power cycle; needs libsgtap with tiltreg, idle or between moves):
+      TPW=<pw> tools/tiltreg.sh "wave -9"            (or the raw table: tools/tiltreg.sh "lut 0x00800000 0x20100200 0x42108410 0x44444444 0x04108844 0xefff0201 0x55b6ddef 0x008424a5 0xb0b0105a 0x00f70000")
+      TPW=<pw> tools/tiltreg.sh stock                 (back to stock: also restores the default table)
+      TPW=<pw> tools/tiltreg.sh cur                   (MSCNT, A, B at standstill; check with: python3 tools/mslut.py check -9 MSCNT A B)
+  How the table works: tools/mslut.py (TMC5130 MSLUT0-7 0x60-0x67, MSLUTSEL 0x68, MSLUTSTART 0x69; f = sin t + a sin 3t, a = P/100, peak kept at 247 = the stock peak,
+  so the peak current never rises; average torque and angles unchanged; a 4th-harmonic torque ripple of +-a is what can cancel the motor's full-step cogging).
+  The app never writes the table (init writes GCONF, CHOPCONF, IHOLD_IRUN, PWMCONF, ramp regs only), so a boot-time write would have to come from libsgtap after the app's init
+  (log ticks ~14.6 s uptime) and only at standstill (stst AND XACTUAL == XTARGET, as tiltreg does).
+
+NEXT TRIES (tables ready, not yet heard; negative polarity is the helpful one, stronger = -12 .. -26 %):
+  wave  -6 %:  tiltreg lut 0x42104104 0x10884210 0x44444222 0x42110888 0x01008208 0xf7efffff 0x5556b6ee 0x00821249 0xa0a0104a 0x00f70000
+  wave  -9 %:  tiltreg lut 0x0080ffff 0x20100200 0x42108410 0x44444444 0x04108844 0xefff0201 0x55b6ddef 0x008424a5 0xb0b01049 0x00f70000
+  wave -12 %:  tiltreg lut 0xdff7f7f7 0x00000000 0x84208040 0x24489110 0x22224491 0x00080842 0x5addefdf 0x01044a55 0xc0c02049 0x00f70000
+  wave -15 %:  tiltreg lut 0xddeeeddd 0xefff7efb 0x42040040 0x49244888 0x2492924a 0x10108889 0x5bbbf7ff 0x010894ab 0xc0c04049 0x00f70000
+  wave -18 %:  tiltreg lut 0xb6dad6b5 0xdfbeeeed 0x08080000 0x29249221 0xa52a54a5 0x21112494 0xdddfffff 0x0209295a 0xc0c04049 0x00f70000
+  wave -22 %:  tiltreg lut 0xaaaa952a 0xbbbb6d5a 0x4080ffbf 0xa9494488 0xaaaad52a 0x2452552a 0xef7f0082 0x021252d6 0xd0d05049 0x00f70000
+  wave -26 %:  tiltreg lut 0x52491222 0xdb6ad54a 0x2000ff7d 0xaaa52444 0xad6ad6aa 0x94aaaab5 0xf7ff1044 0x021295b6 0xd0d05049 0x00f70000
+
+RUNNER-UP: SpreadCycle at IRUN 29 ("different, a bit smoother"): tools/tiltreg.sh "stealth 0" (stock = "stealth 1"). Combine with the wave when testing further.
+NOT HELPFUL (heard): lower IRUN (22: worse), chopper (TOFF 2 TBL 2 HSTRT 2 HEND 1: same + random noises after the stop), PWM_GRAD 14, PWM 255 1 3 1 (no difference).
+IDEAS NOT TRIED: faster tilt speeds as a comparison (tools/tiltset.sh), hold current > 0 for the noises after a stop (user's own hold setting is 0), the 5th harmonic in the table.
+Rules from the user: never more current than the machine setting (29); datasheet-forbidden chopper / PWM values are refused (TOFF 1 needs TBL >= 2, HSTRT+HEND <= 18, AMPL >= 64, GRAD >= 1).
+Live state: libsgtap a286252b (build 33 + tiltdump + tiltreg) in /customer/mod, backups in sglog/live_backup_1854 (128aacd5 = exact build 33). Source: mods/src/sgtap/sgtilt.c (sgtilt_reg_cmd, sgtilt_dump_cmd).

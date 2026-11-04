@@ -1,0 +1,211 @@
+EXPOSURE LCD IMAGE PIPELINE AND THE "FILTER" (LCD COMPENSATION?) MODULE - read-only RE, 2026-10-21 (chitu V1.5.9)
+==============================================================================================================
+
+QUESTION (user): is there any control over the image shown on the exposure LCD?  Static analysis of the firmware strings + code
+and the app logs of 2 prints (backups/applog). Nothing was run or changed on the printer (it was unreachable at the end).
+
+PIPELINE PER LAYER
+  1. print_file_read_image: layer image from the CTB / GOO (run-length data; tag print_file / print_file_image, funcs 0x729a8..0x74784:
+     "image_decompress ticks", "total_pixel_cnt", PNG/JPEG paths for previews, "rowbytes/xoffset/yoffset/pixelbytes").
+  2. image_fpga_compress (0x729a8 area, "image_fpga_compress ticks: %llu") and image_send (0x74414, "image_send_ticks %llu"): in the Piramidi 12x log
+     one full layer: fpga_compress ~778 ms, send ~769 ms.
+  3. The picture goes to a Lattice LIFCL-17 FPGA (ChituFPGA.bin, never touched) that drives the exposure LCD. SoC side: /dev/spidev0.0
+     (fpga communication, funcs 0x8209c / 0x82ff4), /dev/i2c-0, /dev/sspi (sSPI used to load the bitstream, "fpga_sspi_set_cfg",
+     "fpga_lattice_init", "fpga reboot", "fpga_resolution_x/y", "real_x real_y version").
+  4. Geometry from the log: "ctb_x = 15120, ctb_y = 6230, fpga_x = 15120, fpga_y = 6230": the LCD is 15120 x 6230 and the file image maps 1:1
+     (no scaling, no offset in this print).
+  The SoC's own display output (appconfigs/LCM.ini, fbdev.ini: 1024x600 TTL panels) is the 7" TOUCH UI, not the exposure LCD.
+
+CONTROLS KNOWN
+  - UV LED: machine settings I3 C (light source mode, 2) and I4 C (UV PWM 0-255, 255 here), uv_light_pwm / uv_light_ctrl_mode / frequency I2 C.
+  - Exposure time per layer, light-off, rests: from the print file (layer block P+0x24c .. +0x25c, see docs/dynamic_wait.txt).
+  - "partition_exposure" (app_partition_exposure, partition_exposure_Num/time/file_path/index): exposure test with
+    /customer/resources/exposure_test_image0/1/2.bin (1.3-1.6 MB each, probably FPGA-ready test patterns). Start path not analysed.
+  - Not found: any brightness / gray-level / mask setting in the machine file, or a network (SDCP) command that displays an image.
+
+THE "FILTER" MODULES (possible LCD / UV uniformity compensation, UNVERIFIED)
+  a) core/filter.c, thread filter_routine (func 0x60204): scans /sys/class/tty for a USB serial device ("USB"), opens /dev/ttyUSBx, sends
+     "5M103\n", expects "OK M103", receives "count %d X %d Y %d D %d" records and writes /customer/resources/filter-%d.bin (error texts
+     "filter_request_start failed index %d", "filter recv count %d %d", "filter stop response"). Looks like a factory fixture (a measuring
+     jig on the USB port) that scans the LCD (X, Y, D = position + intensity/density?) and stores a map.
+  b) tag "print_file_image_filter" (funcs 0x75754 free, 0x75784 load a float W x H table and track ref / max / min ("ref %f max %f min %f"),
+     0x75948, 0x75b38 opens a file "rb" and parses a text header of 13 numeric fields with strtod, 0x76198 allocates "mask_buf" and applies the
+     table; 0x76510 = zip reader). No direct bl / pointer to 0x75b38, 0x76198, 0x75948, 0x75784 was found: reached some other way
+     (or dead code). Interpretation: a per-pixel brightness compensation map applied to the layer images before they are sent to the FPGA.
+  c) EVIDENCE it is not active on this printer: no filter-*.bin anywhere in the stock volumes (work/fs), and 0 "print_file_image_filter"
+     log lines in log1 / log2 (2 prints, ~53k lines) although the module logs "ref .. max .. min .." when it loads a table.
+  OPEN: what enables it (file present? setting?), the file format (text header with 13 fields, then floats?), the meaning of "index" in
+  filter-%d.bin, how mask_buf is applied (gain per pixel? which resolution?), whether a user-made map would be honoured. The customer
+  volume is ours to change, so a map file could be supplied if the format is understood; that is a research step, not tested.
+
+CONTINUED (same day, printer on again) - RESULT: the filter / mask pipeline is NOT reachable in normal operation of V1.5.9
+  - On the printer (read-only): no filter-*.bin anywhere (only fw_ble_scan_ad_filter.bin of the Wi-Fi/BLE chip), /customer/resources has only
+    exposure_test_image0/1/2.bin; the app logs have 0 "print_file_image_filter" lines.
+  - The print object init 0x7caf8 (called once, from 0x43ab4) starts worker threads: with options bit 0 clear (the normal case) the compress
+    worker 0x729a8 and the send worker 0x74404; with bit 0 SET the variant 0x732d4 + 0x76198 (the mask / filter worker) + 0x729a8.
+    "options" (log "layer = 0 options = 0", stored at P+0x2a8) is computed at 0x43a84 as 0 or 8 only (8 when a UI setting at +0x625 and
+    +0x728 > 0, probably time-lapse): bit 0 can never be set -> the filter worker 0x76198 is never started in a print.
+  - filter_routine 0x60204 (USB serial "M103" jig, writes filter-%d.bin) starts a helper 0x595b0 that creates the same compress / send
+    threads (names "image_fpga_compress", "image_send") = it shows images on the LCD while it measures: a FACTORY calibration flow.
+    Its init 0x60db8 (creates filter_thread) has no caller and no pointer to it in this build. The firmware also has a factory mode
+    (U-Boot env chitu_factory_mode=1, checked at 0x59a60 via /etc/fw_printenv) which we must not touch (never fw_setenv).
+  - So: no hidden compensation map is active, and none can be supplied by a file: the code that would read it never runs. Turning it on
+    would mean patching chitu (like tools/patch_cpu.py) to set options bit 0 AND knowing the table format: research with a real risk of
+    breaking printing, not recommended. The practical route stays the slicer (UVTools) or the LCD / UV power settings.
+
+HOW TO CONTINUE (not done; only if the user wants it)
+  - Find how 0x76198 / 0x75b38 are reached (indirect calls in the print path around print_file_read_image) and the exact enable condition.
+  - Decode the filter-%d.bin loader (13 header fields, matrix size from the header at +0x30 / +0x32 of the filter struct).
+  - Check on the printer (when on): ls /customer/resources, find files named filter*, app log at print start for print_file_image_filter.
+  - Today's practical route for uniformity / masks: the slicer (UVTools) edits the layer images in the CTB (the user already made
+    "Accuracy_Compensato" files).
+
+GRAY LEVELS TOWARDS THE FPGA (checked 2026-10-21 after the user pasted a Reddit PSA claiming 16K printers only get 3-bit gray, uniformity masks
+being a chitu-FPGA topic; the post text was pasted by the user, the page itself could not be fetched)
+  image_fpga_compress 0x729a8, mode [ctx+0x14] == 1, run-length list (value, count) per row: byte = 0x80 | floor((value >> 1) * 124 / 127)
+  i.e. the app sends 7-bit gray (0..124, white = 0xFC) with run lengths, NOT 3 bits; output buffers of 0xfff bytes are handed to the sender
+  through the callback dispatcher 0x55758. Another branch (first element of an empty buffer) stores 0x80 for values <= 0x7f and 0x00 above
+  = a threshold, meaning not understood (possible bug, unverified). A reduction to 3 bits, if it exists, happens inside the FPGA bitstream or the
+  panel interface, which cannot be seen from the app. The firmware does contain (disabled) a mask / filter pipeline + a factory USB-serial
+  calibration flow (see above), i.e. Elegoo's code base has the uniformity-mask idea, but it is not active on V1.5.9.
+  Empirical test idea (not done): a CTB with a gray ramp (e.g. 16 steps) and a thin-layer cure test / UV-sensitive paper, to see how many
+  distinct levels the panel really gives.
+  User's view (2026-10-21): the 3-bit limit is at hardware level: Chitu Systems' board / FPGA for 16K panels, while 12K boards can show shades.
+  Evidence consistent with that: (a) the app has no model-specific gray reduction: image_fpga_compress has three states (0 start, 1 feed,
+  2 flush) and two feed variants (run list from the CTB, raw byte buffer from a PNG path), both scale 8-bit gray to 7-bit (x 124/127) and emit
+  [0x80 | gray][run length <= 72]; (b) the FPGA image ChituFPGA.bin is a Lattice Radiant bitstream for a LIFCL-17 (Nexus, 2.78 Mbit), design
+  ".\Bale\plain.bit", dated 2025-02-07, "Security: On": its gray handling cannot be inspected or changed (never touched anyway);
+  (c) the app logs the FPGA resolution + version at start (fpga_resolution_x/y, version) = the board announces itself. Not testable here:
+  how a 12K board behaves with the same stream.
+
+EXPOSURE TIMING AND THE LINK TO THE FPGA/MCU (read-only RE 2026-10-21, for the temporal anti-aliasing idea: several binary images inside one exposure)
+  The idea (user): show the normal layer for part of the exposure, then variants with fewer edge pixels for the rest, so edge pixels get 40/60/80/100 %
+  of the dose from black/white images only (bit-plane PWM). Findings:
+  - Exposure is timed by the APP, polled: print step handler (print-step 0x7cfb4 area): "printer start exposure" log, 0x81228(P+0x380) (starts the
+    strain recorder), 0x832b8 (command 0x29 on the link), then UV: 0x81b64(2) fan, 0x81be4(2, layer PWM = u8 of P+0x248) = UV LED PWM from the SoC
+    (channel 0 via 0x883a8), then P+0x338 = now_ms (exposure start). Each pass compares now_ms - P+0x338 with "cur p_time" (live float at 0x2fda88+0x28,
+    seconds) x 1000: exposure_time = P+0x24c, or for TRANSITION layers a graded time ("tran layer[%d] etime", "[%d] cur p_time", from P+0x168 and a
+    per-layer delta at P+0x3a4..). When done it goes to 0x7d170 (UV off path; 0x83304 = command 0x28, UV PWM state 1 = off).
+  - The link (0x830ac select, 0x830f4 write -> 0x88ef4; fd in 0x2fe458+4) carries: 0x29 (exposure on), 0x28 (exposure off), 0x1a (an 8-byte parameter
+    command, 0x83350), and the IMAGE STREAM: 0x83690 sends the compressed layer in 0x800-byte packets, each "0x3c + 2048 bytes" (frame length 0x801).
+    The send worker 0x74404 calls it per compressed chunk (log image_send_ticks ~770 ms per full layer in the Piramidi 12x log).
+  - So an extra image = a new compressed stream sent as 0x3c packets + 0x29 / UV on for dt + 0x28 / UV off. Whether the FPGA keeps the previous image
+    while a new stream arrives, whether 0x29/0x28 gate the LCD or only the UV, and the real timing are NOT known.
+  Cost estimate: compress ~780 ms + send ~770 ms per image (probably overlapped in two threads) -> 0.8 - 1.5 s per extra image with the UV off.
+  Ways to implement (increasing effort): (1) passive tracer of the link in libsgtap (interpose write/ioctl on the fd of /dev/spidev0.0 or the
+  transport, opt-in file like sgcap): logs command bytes + timestamps per layer = the real sequence, no behaviour change; (2) a stub patch in chitu
+  at the exposure end (like tools/patch_cpu.py) that runs extra sub-exposures: needs the extra images (extra entries in a .goo / generated on the
+  printer from the layer) and the exact stream format; (3) generate everything off line and feed it through the print file. Unverified everywhere.
+
+TRACER (build 32, mods/src/sgtap/sgspi.c, 2026-10-21)
+  Passive look at the board link: write()/read() on the app's /dev/spidev0.0 fd (the transport is plain write/read: PLT 0x173f0 write, 0x18550 read).
+  Off unless /media/mmcblk0p2/sgcap/FPGATRACE exists. CSV sgcap/fpga_<boot>_<s>.csv: ms (CLOCK_MONOTONIC), tid, kind W/R/I, len, info.
+  Use: touch sgcap/FPGATRACE, run a short print (or the LCD test with the VAT REMOVED: it switches the UV on), rm sgcap/FPGATRACE, pull the csv and
+  line it up with the app log ([tick] = the same clock): look for 0x29 / 0x28 around "printer start exposure", the I bursts (image send) and the
+  0x1a parameter commands. Offline test: tools/build_sgtap.sh builds build/sgtap/sgspitest (fake files, env SGTAP_SPIMATCH / SGTAP_MATCH).
+
+FIRST TRACE OF THE BOARD LINK (2026-10-22, build 32 tracer, built-in LCD test Text -> Grid -> Full screen, tank removed, UV on ~8 s each):
+backups/fpga_trace_20261022_lcdtest.csv (8636 records, 31 s), summary with tools/analysis/fpga_trace.py. Frames on /dev/spidev0.0 (one thread, tid 752):
+  1. "28 00 00 00", "2a 00 00 00", "2c 00 00 00" (3 x 4 bytes, same ms)  = start AND end of every display (meaning not decoded: stop / clear / reset?)
+  2. IMAGE: 0x3c + 512 data bytes per packet, no gaps: 3174 / 2824 / 2581 packets = 1628262 / 1448712 / 1324053 B in 673 / 565 / 525 ms (2.4-2.6 MB/s,
+     ~20 Mbit/s). The data are exposure_test_image0 / 1 / 2.bin (Text, Grid, Full screen) from byte 48 on (the 48-byte file header, whose bytes 4..7 =
+     the file size, is not sent): the packet count = ceil((size - 48) / 512). First payload byte 0x00 (image0, image2) or 0x80 (image1) = start state.
+  3. 8 x (0x4c + 2047 zero bytes) = 16 KB of zeros right after the image (4 ms): end-of-image / flush
+  4. "29 00 00 00" = show / start the display; in the SAME millisecond the UV: 5. "fe 04 01 07 a1 07 a1" (7 bytes, answer "fe 00 00", 3 bytes)
+  6. ~8 s later "fe 04 01 07 a1 00 00" (+ answer) = UV off, then 1. again (28 2a 2c).
+  UV LED frame = 0xfe, 0x04, 0x01, period u16 BE (0x07a1 = 1953), duty u16 BE (0x07a1 = 100 %, 0x0000 = off) -> the app's PWM calls (0x883a8) go over this link
+  (duty scaled to the period, e.g. 255 x 255 PWM = 100 %). So: DISPLAYING AN IMAGE (3c.. 4c.. 29) AND SWITCHING THE UV (fe ..) ARE SEPARATE FRAMES:
+  an image can be shown with the UV off by simply never sending the fe frame (or sending duty 0).
+  Stream format (test images, same as image_fpga_compress): per row [value byte 0x80|gray7][run bytes <= 72 ...] runs summing to 15120 pixels; run bytes
+  sum = 94186371 ~ 15120 x 6230. Full screen = 0xfc (white) + 208 x 0x48 + remainder per row; Text / Grid also contain other gray values (anti-aliased).
+  Image buffers: the byte after 0x3c is the first payload byte, so the 00 / 80 alternation (00, 80, 00) is NOT a buffer flag but each file's first value byte.
+  Not known: the exact role of 28 / 2a / 2c and of the 0x4c block, whether the FPGA double-buffers (could a second image be streamed while one is shown?),
+  how 0x29 picks the image, what its 3 zero bytes mean.
+  Consequences for the ideas: (a) UV-off display is possible by construction (own frames: 28 2a 2c, 3c stream, 4c x 8, 29, no fe); (b) a full image costs
+  0.5-0.7 s on the link; (c) dim UV for visible tests: fe .. duty = e.g. 20 / 1953 (1 %); (d) temporal anti-aliasing needs the same frames per sub-image
+  (stream + 4c + 29 + UV on/off), with the UV off while streaming = +0.6 s per extra image, less if the FPGA can take the next image while one is shown (to test).
+
+UV-OFF / DIM DISPLAY COMMAND (build 33, mods/src/sgtap/sgdisp.c, tools/lcd_stream.py, 2026-10-22)
+  Stream format (decoded from the stock test images + the app's compress code): the file = 48-byte header (1d 01 fd 12, bytes 4-7 = file size LE, rest copied) + stream
+  from byte 48; the stream = 12460 half rows of 7560 px (6230 rows x 2); per half row: value byte 0x80|((g>>1)*124//127) (ONE pixel) + run bytes <= 72 (more repeats of that
+  value); sum of (1 + runs) over all value tokens = 15120 x 6230 exactly; the stock images add zero padding at the end and the first byte is 0x00 or 0x80 (start state).
+  tools/lcd_stream.py selftest: decode + re-encode keeps the pixels of the 3 test images (minimal re-encoding is 1-2 % smaller: the app also emits redundant value tokens).
+  Command and safety: see the project notes (build 33). Order of what the board sees for a show: fe..0000, 28 2a 2c, 3c packets, 4c x 8, 29 (+ fe..duty only with duty > 0).
+  Unverified on the real board: that a minimal re-encoded stream shows the same picture as the stock stream, that 29 alone shows the image with the UV off, the dim levels.
+
+FIRST lcdshow ATTEMPT (2026-10-22, build 33, "lcdshow grid 0 20", UV 0, printer idle, trace on: backups/fpga_trace_20261022_lcdshow_firstattempt.csv) - FAILED SAFELY
+  The command aborted with "sending to the display board failed (stopped, UV off)". Trace: our first frame fe 04 01 07 a1 00 00 (UV off) got the answer 00 00 00 instead of
+  fe 00 <status>, so the sequence stopped (no image frame was sent, the UV was never on) and the stop sequence ran (fe .. 0000, 28 2a 2c).
+  CAUSE (code reading): the app has TWO SPI devices on the same fd, selected by the app's function 0x830ac(ch) (gpio 0x48): channel 0 = the display board
+  (0x28 / 0x29 / 0x2a / 0x2c 4-byte frames, 0x3c image packets, 0x4c blocks, ...), channel 1 = the "fpga_extend" device that takes the 0xfe frames:
+  0x83780(cmd, data, len) = [0xfe][cmd][data...] on channel 1 + 0x837f0 reads 3 bytes and expects "fe 00 <status>" (stepper control fpga_stepper_ctrl 0x83e00 uses it too;
+  cmd 4 data 01 period duty = the UV PWM seen in the LCD test). Our frame went to channel 0 (the display board ignored it). FIX (build 34): dsp_uv selects channel 1 before the
+  0xfe frame + the read and channel 0 again afterwards. Side effect of the failed attempt: the display board received two unknown 0xfe frames (no visible effect, the
+  stop sequence followed).
+
+
+RESULT 2026-10-22 (build 34, "lcdshow grid 0 20", tank in, idle): VERIFIED on the real board. fe 04 01 07a1 0000 on channel 1 (answer fe 00 00), 28 2a 2c, image burst
+2824 x 513 B in 518 ms, 8 x 4c, 29, no UV-on frame, 20.956 s later UV off + 28 2a 2c. The user saw the grid on the LCD: 29 alone shows the image with UV off.
+Trace: backups/fpga_trace_20261022_lcdshow_grid_uv0.csv. Still unverified: a minimal re-encoded stream (tools/lcd_stream.py), dim UV levels, FPGA double buffering.
+
+CORRECTION 2026-10-22 (RE of 0x883a8 / 0x889a0 / 0x847e8, user remark "UV needs the cooling fan on"): the app's PWM channel table (0x2e16b0, 8 bytes each: backend, period) is
+  app ch0 = (0,200) SoC sysfs pwm0 (/sys/class/pwm/pwmchip0/pwm0, period 200)   <- UV LED: 0x81be4 always calls 0x883a8(0, ..)
+  app ch1 = (3,4000) SoC sysfs pwm3 (period 4000)                              <- not yet identified
+  app ch2/3/4 = (4/5/6,200) = link channel 0/1/2: frame fe 04 <ch> <period16> <duty16> (0x847e8, cmd 4, len 5)
+  0x81b64 (called before the UV at exposure start, "fan") calls 0x883a8(3, ..) = link channel 1 = EXACTLY the frame lcdshow sends (fe 04 01 07a1 duty).
+  => the frame I called "UV" in lcdshow / the stock LCD test trace is most likely the FAN (ch3). The UV LED is the SoC pwm0 (sysfs), which the SPI tracer cannot see.
+  The runs "lcdshow s4u 5 20" / "grid 0 20" therefore (most likely) ran the fan at 5 % / 0 and never lit the UV. UNVERIFIED: confirm by reading
+  /sys/class/pwm/pwmchip0/pwm0/duty_cycle (and pwm3) while the app's own LCD test or a print runs, or while lcdshow runs. Idle values: pwm0 enable=1 period=200 duty=0; pwm3 period=4000 duty=0.
+  Needed for a real UV display: fan on (link ch1) first, then UV = app ch0 (0x883a8(0,v) or sysfs duty_cycle), and always UV off BEFORE the fan off.
+CONFIRMED 2026-10-22 (build 34, "lcdshow s4u 5 20", tank out, sampling sysfs once a second over telnet): pwm0 (UV, SoC) duty_cycle = 0 and pwm3 = 0 in all 26 samples while the
+  frame fe 04 01 07a1 0061 (5 %) was active; the user heard / saw the FAN respond ("give higher fan impulse"). So that frame = fan (app ch3, link ch1), NOT the UV; the UV LED
+  was never lit by lcdshow. ALLOW_UV and FPGATRACE removed again afterwards.
+NOTE FOR NEXT BUILD (user: no build yet): lcdshow with separate FAN duty (user wants it higher than 5 %; cap/range to decide, ask the user) and a real UV through app ch0
+  (0x883a8(0,v) / sysfs pwm0), fan on before UV, UV off before fan off, pwm0/pwm3 duty in live.json.
+DECISION 2026-10-22 (user): fan duty range for lcdshow = 20..100 % (when the UV is on the fan runs at least 20 %). Build only when the user says so.
+TEST build 35 2026-10-22 "lcdshow s4u 0 50 20" (UV 0, fan 50): trace backups/fpga_trace_20261022_lcdshow_b35_uv0_fan50.csv: fe 04 01 07a1 03d0 (fan 976 = 50 %, answer fe 00 00) FIRST, 28 2a 2c,
+  image 2771 x 513 B, 8 x 4c, 29; 20.9 s later 28 2a 2c, fan off frame fe .. 0000. pwm0 = 0 and pwm3 = 0 in 30/30 samples. Next: UV 5 % + fan 100 % (tank out, ALLOW_UV for that run).
+TEST 2026-10-22 fan kick-start by hand (build 35, two lcdshow in a row, no build needed): fan 100 % (fe 04 01 07a1 07a1) for 4.0 s, then straight to 50 % (03d0, no zero frame
+  between; the image is re-sent), off at 9.99 s. Trace backups/fpga_trace_20261022_fan_100_then_50.csv. Idea for the next build if the user confirms it starts better:
+  built-in kick-start (fan 100 % for N s first, then the requested FAN %).
+TEST 2026-10-22 (user: fan 100 % works well, 50 % does NOT keep running): fan 100 % for 4.5 s, then 75 % (05b8) without a stop for 9.0 s, off at 13.49 s.
+  Trace backups/fpga_trace_20261022_fan_100_then_75.csv. Result: see the user's next message.
+DECISION 2026-10-22 (user): the cooling fan does not cope with PWM below 100 % (50 % did not keep running, 75 % judged the same): from now on the fan is ALWAYS 100 %.
+  Build 35 still takes FAN 20..100: use 100 (lcdshow NAME UV 100 SECS). Next build: drop the FAN parameter (fixed 100 %), keep the 10 s run-on after a UV run.
+TEST 2026-10-22 build 35 "lcdshow s4u 5 100 20" (tank out, user confirmed): fan 100 % frame first, 28 2a 2c, image, 29; pwm0 duty_cycle = 5 (period 200, enable 1) for 20 samples,
+  back to 0 at the stop; the fan frame off (fe .. 0000) came 10.5 s after the stop (run-on). UV order confirmed: fan first, UV after the image, UV off before the fan.
+  Trace backups/fpga_trace_20261022_lcdshow_uv5_fan100.csv. ALLOW_UV and FPGATRACE removed afterwards.
+RESULT 2026-10-22 (user: "all perfect"): the own-encoded S4U logo (tools/lcd_stream.py, 2771 packets) displays correctly with UV 5 % + fan 100 %. Verified: minimal re-encoded stream = stock-quality
+  picture; 29 shows it; UV via pwm0 (0x883a8(0,%)), fan via fe 04 01 07a1 07a1. Still open: finer UV levels / grey shades, FPGA double buffering, temporal anti-aliasing.
+BUILD 36 SOURCE (not built yet, awaiting the user's OK) 2026-10-22: 'lcdshow NAME UV SECS': UV 0..100 % (app's own scale, user wanted 80 %), SECS 1..30 (limits chosen by the user:
+  "no reason to go above 30 s"), fan fixed 100 % (no parameter), run-on 10 s after a UV run, ALLOW_UV needed for UV > 0. Offline test on the printer OK. RULE (user): ask before adding any cap.
+TEST 2026-10-22 build 36 "lcdshow s4u 80 20" (tank out, user confirmed): fan 100 % first, 28 2a 2c, image, 29; pwm0 = 80 (period 200) for 20 samples, 0 again at the stop; fan off frame 10.5 s after the stop.
+  Trace backups/fpga_trace_20261022_lcdshow_uv80_fan100.csv. ALLOW_UV, FPGATRACE removed. User's observation: see next message.
+RESULT 2026-10-22 (user: "all good"): UV 80 % + fan 100 % display of the S4U logo fine. Next idea: E0 (swap grid -> text with a second lcdshow, user watches the screen), E1 (swap without reset), E2 (runs > 72).
+TEST S1 2026-10-22 build 37 (tank out, UV 40 %, fan 100 %): "lcdshow grid 40 30", 8 s later "lcdswap text 0" (NO reset): trace backups/fpga_trace_20261022_swap_S1_noreset.csv:
+  grid stream 0.0-0.527 s then 29; text stream 8.034-8.689 s (3174 packets, 655 ms), then 4c x8, 29 at 8.694 s; no 28/2a/2c, UV (pwm0 = 40) and fan untouched; display off at 30.96 s.
+  User's observation of the screen during the swap: see next message.
+S1 RESULT (user): grid stayed visible, the new image (text) did NOT appear: a stream + 29 without 28/2a/2c is not displayed (the board ignores it / keeps the shown frame).
+TEST S2 2026-10-22 build 37 (UV 40 %, fan 100 %): "lcdshow grid 40 30", 8 s later "lcdswap text 1": 28 2a 2c at 7.998 s, text stream 3174 packets 575 ms, 4c x8, 29 at 8.578 s; UV/fan untouched.
+  Trace backups/fpga_trace_20261022_swap_S2_reset.csv. User's observation: see next message.
+S2b 2026-10-22 (repeat for video, printer clock 02:26:33 grid start, 02:26:43 swap; swap 10.0 s after the grid): 28 2a 2c at 10.000 s, text stream 648 ms, 29 at 10.654 s. Trace backups/fpga_trace_20261022_swap_S2b_video.csv.
+  User's S2 observation: "3" (old grid / no partial image during the stream, swap was fast), user does not know what 29 means in this context.
+S2b RESULT (user, video): the screen goes DARK during the change for about 0.5 s (reset at 10.000 s + stream 0.65 s + 29 at 10.654 s). So an image swap costs ~0.5-0.65 s of dark time (stream-bound: ~1.3-1.6 MB at 2.5-2.8 MB/s),
+  no double buffering visible. Open for temporal anti-aliasing: shorter streams (runs > 72, E2), which of 28/2a/2c is really needed (S1: stream + 29 alone is ignored), whether dark time can be cut.
+TEST E2 2026-10-22 (build 37, UV 40 %, fan 100 %): tools/lcd_stream.py gained MAXRUN (encode(codes, maxrun)); build/lcd/e2_72.bin and e2_127.bin = the stock grid (test image 1) re-encoded with run bytes <= 72 / <= 127
+  (same pixels, 1445424 / 835120 bytes = 2823 / 1631 packets). Shown at 02:32:03 (e2_72, 12 s) and 02:32:20 (e2_127, 12 s); e2_127 stream 329 ms instead of 572 ms. Trace backups/fpga_trace_20261022_e2_runs.csv.
+  User's observation (does e2_127 look identical to the normal grid?): see next message.
+E2 RESULT (user): e2_72 and e2_127 looked IDENTICAL -> the board accepts run bytes up to 127 (stream 42 % smaller, 329 ms instead of 572 ms). The "longer dark time between the images" the user saw was the gap between my two
+  commands (e2_72 ended 12.99 s, e2_127 started 16.49 s = 3.5 s of display off), not a swap. Next: swap test with 127-run versions of two different images to measure the real dark time.
+TEST swap with 127-run streams 2026-10-22 (UV 40 %, fan 100 %): grid_127 (1631 packets) at 02:36:10, "lcdswap text_127 1" at 02:36:20: 28 2a 2c at 10.000 s, text_127 stream (2039 packets) 385 ms,
+  29 at 10.390 s (swap total 0.39 s vs 0.65 s with 72-runs). Trace backups/fpga_trace_20261022_swap_127.csv. Dark time seen by the user: see next message.
+DISTORTION 2026-10-22: the swap test grid_127 -> text_127 (02:36:10) looked BADLY DISTORTED on the top 70 % of the screen for BOTH images (user), although grid_127 == e2_127 (same md5) had looked identical to the
+  72-run grid minutes before (e2_127 followed an e2_72 display 3.5 s earlier). A/B run (UV 40 %, each 8 s, 12.3 s apart): A grid_127 02:39:50, B grid_127 02:40:03, C e2_72 02:40:15, D grid_127 02:40:27;
+  trace backups/fpga_trace_20261022_ab_127.csv (streams 1631/1631/2823/1631 packets, 29 each). User's result: see next message.
+A/B RESULT (user): A (grid_127 from idle) OK, B (grid_127 right after A) DISTORTED, C (e2_72) OK, D (grid_127 after C) DISTORTED; earlier the first grid_127 of the swap test was distorted too, and e2_127 after e2_72
+  had looked fine -> the 127-run stream is UNRELIABLE (72-run streams always fine, ~10 displays). Hypothesis: the FPGA's decode / panel write has a pixel-rate limit (94 Mpx in 0.31 s = 300 Mpx/s with 127-runs vs ~170 Mpx/s with 72-runs);
+  too fast a stream overflows it. Test file build/lcd/grid_127p.bin = the 127-run grid with zero bytes spread over every half row so it has the size of the 72-run stream (same pixels).
+NOTE (user): in the A/B run the dark time between the images was about 3 s or more (commands 12.3 s apart, 8 s display = 4.3 s display off + 10 s... fan run-on irrelevant): every image started from display-off, not from a fast swap.
+DECISION 2026-10-22 (user): stop the run-length experiments; stay with the stock 72-run format that always worked. An image swap costs about 0.6 s of dark time (28 2a 2c + stream ~0.55-0.65 s + 29),
+  accepted as negligible for specific tasks. Test files left on the printer: sglcd/e2_72.bin, e2_127.bin, grid_127.bin, grid_127p.bin (untested), text_127.bin, s4u.bin. lcdswap with RESET 0 (no reset) does not show the new image.
+  Open (not pursued now): temporal anti-aliasing inside a print layer (needs per-layer integration with the app's exposure loop), UV level steps (pwm0 period 200).

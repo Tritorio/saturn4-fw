@@ -1,0 +1,45 @@
+STRAIN GAUGE BOARD FIRMWARE - read-only analysis (2026-10-24)
+=============================================================
+File: /customer/resources/upgrade_cbd_app_lcd_strain_gauge_1.1.0.bin (16296 bytes, md5 b6979fd4...), flashed to the board over YMODEM by chitu at every boot
+(the board answers CAN = already up to date). NOTHING WAS CHANGED; analysis with capstone only (build/gauge_fw/app.asm, not kept in git).
+
+FORMAT
+- 0x800 bytes of header (0x00-0x1f used: "14 18 01 1a 01 01 05 ff 01 00 00 00" + size 0x37a8 + 16 bytes of check data (hash / CRC / MAC: algorithm unknown), rest 0xFF),
+  then the image: 14248 bytes (0x37a8) of Cortex-M0(+) code. Vector table at file offset 0x800: initial SP 0x20003000 (12 KB RAM), reset 0x08004f25.
+- LINKED AT 0x08004000 (the board's bootloader holds 0x08000000-0x08003fff): the NMI / HardFault stubs ("b .") sit at image offsets 0xeac / 0xeae = 0x08004eac / ae.
+- ST HAL (STM32G0 class: GPIO at 0x50000000, USART1 0x40013800, USART2 0x40004400, RCC 0x40021000), no RTOS. main at 0x08004520:
+  HAL init, clocks, GPIO, USART, reads a 0x20-byte settings block from flash (prints "app version:%d.%d.%d"), then loops forever:  0x080045a4 (UART command handler),  0x08004ae0 (sampler).
+
+THE ADC (CS1237, bit-banged on GPIOA: PA7 = clock, PA6 = data / DRDY)
+- 0x08004890 clock pulse (PA7 high, ~12 NOPs, low, ~12 NOPs).  0x08004994 = CS1237 WRITE CONFIGURATION: waits for DRDY (PA6 low, timeout 300 ms), 29 clock pulses, then the 7-bit command
+  0x65 (the code shifts 0xCA = 0x65 << 1) and 8 config bits (the argument), MSB first.  0x080048b4 = READ: waits for DRDY (timeout 300 ms), 24 data bits (sign-extended), 21 more clocks.
+- 0x08004ab8: ReadSample(&v): WriteConfig(0x0C); v = Read().   => the config byte is 0x0C = 0b0000_1100: REFO_OFF 0, SPEED_SEL 00 = 10 Hz output rate, PGA_SEL 11 = x128, CH_SEL 00 = channel A.
+  The configuration is written again BEFORE EVERY SAMPLE, which restarts the conversion: each sample costs two DRDY waits at 10 Hz (about 190-195 ms in total).
+- 0x08004ae0 (sampler, called every main-loop pass): if (HAL_GetTick() - last) >= 101 ms { last = now; ReadSample(&latest) } (compare constant 0x63 at 0x08004af2).
+- 0x080045a4 (command handler): ring buffer from the UART; frame 01 03 + 2 CRC bytes (CRC function 0x08004b44); the reply 01 03 04 <int32 latest> <CRC> is built from the CACHED latest value
+  (0x08004acc) and sent at once.
+=> WHY THE REPLY COMES ~167 ms AFTER THE REQUEST: the main loop is blocked inside ReadSample (~190-195 ms per call, back to back because every call lasts longer than the 101 ms throttle),
+   so the UART request is only handled when the sampler returns. The poll interval of the app (196.7 ms) is simply the board's sampler cycle. The value returned is the sample that
+   was just completed (first conversion after the restart).
+
+WHAT WOULD RAISE THE RATE (not done)
+- The ADC speed byte 0x0C -> 0x1C (40 Hz) or 0x2C (640 Hz): one immediate (movs r0, #0xc at 0x08004aba).  Cycle ~2 conversion periods + restart.
+- The 101 ms throttle in the sampler (cmp r0, #0x63 at 0x08004af2) would still cap it at ~10 Hz: it would have to be lowered too.
+- Noise grows with the rate (CS1237: 10 Hz best; 40 Hz ~2x rms, 640 Hz ~8x): the present 10 Hz noise is about 0.3-0.4 g rms at k = 100 counts/g.
+- Unknowns / risks: the 16-byte check field of the header (the bootloader probably refuses a changed image: safe, or erases first: unknown), the recovery path if the board ends up
+  with an invalid image (the stock file back through a USB update of the customer volume would be tried by the app at the next boot, only if the bootloader still accepts YMODEM),
+  and above all whether chitu assumes 5 samples per second (calibrate 5 s windows, probe / levelling / foreign matter guard thresholds): a different rate could change the levelling and the guard.
+
+HOW THE BOARD IS FLASHED AND WHY IT IS "UP TO DATE" (read-only, 2026-10-24: chitu strings + the boot capture backups/sglog/sgcap/cap_18.bin)
+- Header check field = plain MD5 of the 14248-byte image (file offset 0x800 to the end): md5 be888c2f1f335d1b7a71a598c6180e4e = header bytes 0x10-0x1f (reproduced). Anyone can recompute it.
+- Header bytes 0-15: 14 18 01 1a | 01 01 05 ff | 01 00 00 00 | a8 37 00 00 (size 14248). Probably date 2024-01-26 (0x14 0x18 / 01 / 1a), version bytes 01 01 05 (the app prints "app version:%d.%d.%d" from
+  three bytes of a flash settings block), and the size. The bootloader's exact rule is not known.
+- chitu (ceb-iap, ymodem.c; function 0x7ea80 opens /dev/ttyS1 at 115200, path /customer/resources/upgrade_cbd_app_lcd_strain_gauge_1.1.0.bin hard coded at 0x26d6dc) sends the file at EVERY boot with a
+  plain YMODEM / CRC16 (0x1021) sender and does no version check of its own. Failure to get an answer is only logged ("No response from MCU", code 2); the printer keeps running.
+- Capture of the exchange (t = 0 at the capture start): block 0 (SOH, 133 bytes: file name ..._1.1.0.bin + size 16296) -> board ACK (06) and 'C' (43, ready for CRC data) 25 ms later;
+  block 1 (STX, 1024 bytes = the FIRST 1 KB of the file = the header block) -> 100 ms later the board sends CAN (18) twice = it refuses: "already up to date".
+  So the board's BOOTLOADER decides after it has seen the header block (version / date / MD5 / size fields), not from the file name alone.
+- The bootloader (board flash 0x08000000-0x08003fff) is not part of any file we have: its accept / refuse rule, whether it verifies the MD5 before or after erasing the application, and
+  what it does with an invalid application cannot be established from the files. A changed image can only be tried on the real board.
+- A recovery path would exist only if the bootloader stays in YMODEM-receive mode with an invalid application and chitu keeps sending the file: then restoring the stock file by a USB
+  update of the customer volume would re-flash it at the next boot. NOT verified.

@@ -1,0 +1,174 @@
+DYNAMIC WAIT AFTER RETRACT (idea 8.11, static RE + live read 2026-10-19, V1.5.9 chitu)
+============================================================================================
+Goal (user): start the UV exposure as soon as the resin has settled after the retract, instead of
+after a fixed wait. Data: docs/force_report.html (settling 24 s at layer 4 -> 1 s at layer 15).
+
+HOW THE APP WAITS (func 0x7cfb4 = print-step handler, called again and again by the print loop)
+- No sleep: a polled check. r4 = print struct (P below).
+    0x7c368  P+0x318 (u64) = now_ms(); P+0x30b (u8) = 2          -> wait starts (after the retract)
+    0x7d020  state byte P+0x30b == 2 -> 0x7d3ec:
+    0x7d3ec  if machine[0x39fa30+0x188] > 0.1 and layer P+0x2ac < [[0x2fda88]+8]+0x34:
+                 s16 = machine+0x188 * 1000          (bottom-layer rule; machine+0x188 = 0.0 here
+                                                       -> never taken on this printer)
+             else s16 = P+0x25c (float, ms)
+    0x7d44c  if (now_ms() - P+0x318) > s16 + P+0x250 (float, ms):
+                 log "printer start exposure %llu"    (0xd0964, logger)
+                 P+0x30b = 0, log "cs1237_recoder_start 0", 0x81228(P+0x380,0), 0x832b8() = exposure
+             else return (checked again on the next pass)
+- now_ms() = 0xd2db0: clock_gettime(CLOCK_MONOTONIC_RAW) in ms.
+- The log line is written BEFORE the exposure calls.
+
+WHERE P IS
+- P = *(uint32_t *)0x2eb6d8  (= global object 0x2eb1c0 + 0x518; written at 0x3641c/0x36424 and
+  0x43608/0x43ac0, read by ~100 functions). Live 2026-10-19: P = 0x59b258 (heap).
+- Per-layer block P+0x220.. (current layer), P+0x260.. (next): +0x220 7.7, +0x228 0.05,
+  +0x248 PWM 255, +0x24c exposure 3300 ms, +0x250 0, +0x254 1000, +0x258 0,
+  +0x25c 24000 = WAIT AFTER RETRACT (ms). Names (2026-10-21, the app's "execute:" log format 0x26c694):
+  +0x24c exposure_time, +0x250 light_off_time, +0x254 rest_time_before_lift (delay between the end of the
+  exposure and the lift), +0x258 rest_time_after_lift, +0x25c rest_time_after_drop. Checked: the running print ("Piramidi 3x") rests
+  ~26 s per layer (24 s + end of the move).
+- Live at the dump: P+0x30b = 2 (waiting), P+0x2ac = 44 (layer), P+0x318 = 10269178 ms
+  (3-5 s before the dump, uptime 10272 s).
+
+PLAN (not built): set a long wait in the slicer (= the maximum). libsgtap watches P: state 2 with
+a new P+0x318 = a new wait; keep the original P+0x25c; when the force has settled (and a minimum
+time passed) write P+0x25c = elapsed - P+0x250 (aligned float store, atomic). The app's own next
+pass then starts the exposure through its own code. After the wait (state != 2) write the original
+value back if P+0x25c still holds ours. Nothing is blocked, no app lock is touched, the wait can
+only get SHORTER than the slicer's. Guard: code-word check like sgheat (0x7c368.., 0x7d3ec..,
+0x7d448 vldr s16,[r4,#0x25c], 0x7d44c..) + kill switch file. Bottom-layer rule: if
+machine+0x188 > 0.1 the app ignores P+0x25c for the bottom layers -> no dynamic wait there.
+User 2026-10-19: bottom layers are usually 2-3, so the bottom-layer rule does not matter. Those
+layers never settle anyway (report: layers 1-3) -> they would run to the maximum wait.
+
+SETTLING RULE (agreed with the user 2026-10-19, mockup G on the dashboard canvas)
+- Settled = force gradient below 1 g/s for at least 1.0 s (window adjustable 0.6-3 s) and no longer
+  falling (the fast recovery after the move is over; a slow steady drip from a plate leaving the
+  resin still counts as settled). Absolute level not used (buoyancy / part weight only shift it).
+- Minimum wait 1.0 s (user). Maximum = the slicer's wait after retract (only ever shortened).
+- Evaluate on every gauge reading (~5/s), not on the 0.5 s writer tick.
+- CSV: wait_s (wait used) + wait_end (settled | max | off).
+- BEFORE BUILDING: replay the rule offline on the logged force curves (Piramidi 3x, 0-11.5 mm,
+  covers the plate leaving the resin) and tune it.
+
+REPLAY ON "Piramidi 3x" (2026-10-19, log 20261019_181114, UVTools export UVTools/Piramidi 3x_peel_force.csv)
+- OFFLINE SIMULATION on the PC: the printer has no dynamic wait yet; the per-layer waits in this
+  print (300, 300, 90, 60, 40 ... 3 s) were set manually by the user in the slicer.
+- Layer match: logger layer L = UVTools layer_index L (rest = slicer wait + ~1 s on every layer).
+- With a part the force after the retract starts +2000..3800 g above the level and decays with a
+  long tail (resin flowing back into the 0.1 mm gap under the 78 cm2 cured area: set by the cured
+  island size, not by the plate height). Layers 2-29 never flattened within their 34-43 s waits.
+- Rules compared (0.5 s CSV rows): gradient < 1 g/s over 1 s is the usable one:
+    layers 30-49: 20 s (slicer 27), 50-79: 7.3 s (17), 80-129: 3.5 s (5.3), 130-266: 2.1 s (4.2);
+    change after the trigger mean 1-4 g, worst 7-25 g. "< 0.5 g/s over 2 s" too strict on noisy
+    0.5 s rows; "remaining exponential tail < 5 g" fails on later layers.
+  Bottom layers 0-1: the rule triggered at ~175 s of 300 but the force still fell 111 g -> do NOT
+  use the dynamic wait on bottom layers (slicer wait).
+- Whole print (layers 2-266): waits 49 min -> 35.7 min (-13.3 min, -27 %); 37 layers never settle
+  (run to the slicer wait).
+- Plate exit: settled level 261 g at 12 mm -> -122 g at 16 mm (buoyancy + part weight), then
+  -47 g at 26 mm (draining). The gradient rule still worked there (only 9 of 137 layers never).
+- Peel calibration (layers 15-129): peel = 1019 g + 0.733 g/mm2 x area (R2 0.95, rms 404 g)
+  = 10.0 N + 0.0072 N/mm2 (UVTools placeholder kA 0.02 N/mm2 is ~2.8x too high). Perimeter adds
+  nothing. Blank-subtracted: kA 0.0070 N/mm2. Layers 0-14 (slab) peel only 2.2-3.2 kg at the same
+  area, rising to 7.1 kg at layers 15-16: cause unknown (lift settings per layer not in the export).
+- Lift speed (user): slow for the first 50 layers, double after. Visible in the log: lift and drop
+  phases 4-4.5 s -> 2-2.5 s from layer 50. Peel vs the area model: 0.85 (layers 44-49) -> ~1.15
+  (50-56), blank run 287 -> 474 g at layer 50 -> doubling the speed raises the peel ~30-40 %
+  (speed exponent n ~ 0.4 in the UVTools formula; one print only).
+- Layers 0-15: NOT the speed (unchanged until 50) and NOT the shrinking section (the rise starts at
+  layer 11, the section shrinks from 15): peel/model ramps 0.33 (layers 8-10) -> 0.37, 0.43, 0.49,
+  0.64 -> 0.99 at layer 15 (part 1.1 -> 1.6 mm thick). Cause open; test: a plain slab 3 mm thick
+  (ramp at ~1.1-1.5 mm = height effect, at the slab top = geometry effect).
+- SETTLING vs ISLAND SIZE (Piramidi 3x: 3 equal islands per layer, side = sqrt(area/3) from the
+  UVTools export; vat 35.7-36 C; settled = gradient < 1 g/s for 1 s, from the wait start):
+    side 48-52 mm (layers 2-21):  never within 34-91 s
+    44-48 mm: ~30 s (3 of 9 never) | 40-44: 23 s | 36-40: 18 s | 32-36: 12.5 s | 28-32: 7 s
+    24-28: 7 s | 20-24: 6.5 s | 16-20: 5 s | 12-16: 4 s | 8-12: 3 s
+  Steep above ~30 mm (46 -> 34 mm: time ~ side^3), a floor of 3-7 s below (end of the move,
+  plate). The positive squeeze excess after the drop (510 g at 44 mm, 108 g at 34 mm) is gone
+  below ~29 mm; there only the dip of the move recovers. Confound: plate height rises with the
+  layer (small effect above 3 mm, blank run). NOT the speed: the wait starts after the drop
+  (user), and the settling time falls smoothly through layer 51 (first wait after a fast drop:
+  49 12.5 s, 50 12.5, 51 11.5, 52 11, 53 9.5) with the same start excess (~700-2300 g).
+  Single-exponential fit is poor for the big islands (long tail, rms 25-115 g).
+- Test scope (user 2026-10-19): layer height (0.1 mm) and vat temperature (~36 C) stay constant
+  in all tests -> no temperature / layer-height tests. Island size: answered by Piramidi 3x.
+  Still open: shape (square vs long strip, same area), optionally holes / drain paths.
+- User 2026-10-19: Piramidi 3x is the designed WORST CASE (section never above ~35 % of the print
+  area); shapes/sizes/island counts are endless, so no shape tests. Use: its settling times are
+  the upper bound for the slicer's (maximum) wait; the dynamic wait measures every real layer.
+  Note: big sections (islands ~50 mm) did not settle within 40-90 s, so the maximum there must be
+  longer than the waits used in this print.
+- kA ESTIMATE (UVTools form (F0 + kA*A) * (v/vRef)^n, kP = 0, vRef = slow lift speed, layers
+  15-129 of Piramidi 3x, peel measured from the settled level): joint fit F0 7.5 N,
+  kA 0.0075 N/mm2, n 0.21, R2 0.95, rms 3.7 N. Separate fits: slow layers 15-49 kA 0.0096
+  (F0 -4.8), fast 50-129 kA 0.0083 (F0 9.4); plate-subtracted 0.0069 (slow) / 0.012 (fast);
+  local ratio at the switch (layers 50-59) gives n 0.59. -> kA 0.007-0.0096, best 0.0075;
+  n poorly defined (one switch). Not valid for layers 0-14 (peel 0.33-0.64 of the model).
+
+PIRAMIDI 12x (2026-10-19, log 20261019_211148, UVTools/Piramidi 12x_peel_force.csv, raw capture
+cap_e41fd4ae_21541.bin = every gauge reading of layers 45-114, app log backups/applog/x/log1)
+- Same total area as 3x (7537 vs 7812 mm2), 12 islands of ~25 mm, perimeter x1.66.
+- PEEL SAMPLING (raw capture, fast tilt layers 51-100, equivalent-time template): the peel pulse
+  peaks 0.35 s after the tilt starts and is only 0.27 s wide above half height; the app polls
+  every 0.197 s -> 1-2 readings hit it. Logged peak = 0.63-1.10 x the reconstructed one (mean
+  0.89). The first reading after the tilt start drifts by a varying step from layer to layer
+  (e.g. layers 51-58: 0.03 -> 0.16 s) = the beat between poll and layer cycle (user's idea).
+  Triangle estimate: logged = 64-100 % of the true peak (mean ~82 %).
+- SETTLING by island side: 12x islands 24-28 mm 22 s (3x same side 7 s), 20-24 mm 13 s (6.5),
+  16-20 mm 5.7 s (5). By AREA 12x settles ~2x faster than 3x (full section 20-47 s vs never;
+  layer 50: 5.5 s vs 12.5 s) -> not island size alone: spacing / cluster size matters too.
+- PEEL vs area: fast layers (50+) 12x kA 0.0104 N/mm2 = 3x 0.0103 (area only, same method);
+  perimeter no help (negative kP). Slow layers 15-49: 12x peel FLAT ~2.1-3.1 kg (kA ~0), 3x
+  kA 0.0096 -> open (tilt peel front crossing small islands one by one?).
+- Heater: on only during the tilt (window 0.0-3.5 s after the tilt start on fast layers), so
+  heater noise cannot be separated from the moving force in this print -> test on an idle
+  printer (pre-heat on/off, compare the gauge sd).
+
+IMPLEMENTATION (2026-10-20, image 22, mods/src/sgtap/sgwait.c; UI = mockup G + I)
+- Own thread in libsgtap, 20 Hz. A wait starts when P+0x30b == 2 with a new P+0x318 that is < 3 s
+  old (the printer state word is NOT used: it may read 3 during a print). Per wait: original
+  P+0x25c/P+0x250 kept; bottom layer = P+0x2ac < [[0x2fda88]+8]+0x34 -> hands off (slicer wait).
+  Sanity: wait < 1 h and P+0x2ac within +-1 of the app log's layer, else hands off.
+- Settled = |least-squares slope| of the readings of the last WIN s (all inside the wait, >= 3
+  readings) < GRAD g/s, and elapsed >= MIN and >= WIN. Then P+0x25c = target - P+0x250 (only if
+  shorter than the original); restored when the wait is over if still ours.
+  Replay of this exact rule on the 12x raw capture (layers 45-114): all 69 settled, median force
+  change after the trigger 2 g (worst 31 g, layer 51); waits 1193 s -> 205 s.
+- Wait & heat: heater mode word 0x2fed38+0x114 = 2 (what the app's stage3 code does via 0x8aae0;
+  RE 0x79d84: heat start = stage3 start + machine+0x284 (1000 ms), end = planned end - 1000 ms;
+  the heater thread 0x89f28 keeps the thermostat: print target +0x198, allowed error +0x1a8/+0x1ac,
+  single-cycle limit +0x1a4 min) at the wait start if the previous non-bottom wait (settle time,
+  without the +1 s) was >= 3 s and "heating during print" is on and the heater is ready and the
+  mode is 0. Off when settled (exposure released 1 s later), at slicer wait - 1 s, and always when
+  the wait ends. Bottom layers: heated until slicer wait - 1 s if that wait > 3 s.
+- Settings <csvdir>/WAIT "DW WH GRAD WIN MIN" (absent = off), command "wait ..." via sgwebd.tcl
+  (same ranges, WH needs DW), live.json "wait":{dw,wh,grad,win,min,heat_ok,active,layer,bottom,
+  heating,el,max,g,prev,n,ns,nm,nh,saved,last:[[layer,used_s,end 0 settled|1 max|2 off,heated]]},
+  CSV columns wait_s,wait_end,heat_w. Kill switch /customer/mod/sgwait_disable.
+- Tested: sgwebd validation on the printer (test instance, 12 cases); page layout desktop + 390 px
+  (headless Chrome, fake live.json); libsgtap builds clean. NOT yet tested inside the app.
+
+LIVE TEST image 22 (2026-10-20, dry run "Image 22 test", 89 layers, 0.1 s dummy exposure, 60 s wait,
+2 bottom layers, log 20261020_002542_Image_22_test.csv)
+- Detection (both off): layers 0-4 caught at the app log's layer, max 60.0 s, used 60.02-60.06 s.
+- BUG: bottom count read from [[0x2fda88]+8]+0x34 = 50 = the machine's own "first N layers" value
+  (slow lift / machine+0x188 rule), not the file's bottom layers -> layers < 50 hands off.
+  The CTB v5 file is encrypted; the app keeps the decrypted settings on its heap: 0xCAFEBABE,0 then
+  +0x20 total height, +0x24 layer height, +0x28 exposure, +0x2c bottom exposure, +0x30 light off,
+  +0x34 BottomLayerCount (2), +0x38/+0x3c resolution, +0x40 layers (2 copies, no fixed pointer).
+  Fix (image 23): scan the heap at the first wait of a job, accept copies matching the app's header
+  P+0x108 (+0x1004/+0x1008/+0x1010/+0x1028), all must agree, else 3.
+- Dynamic wait on, layers 11-12 (bottom by the bug): untouched, 60 s. Correct.
+- Wait & heat on, layers 14-16 (bottom path, heat until max - 1 s): heater on 0.09-0.12 s after the
+  wait start, off at 59.06-59.09 s, UV at 60.01 s -> gap 0.92-0.95 s (20 Hz check latency).
+  Fix (image 23): off at max - 1.2 s. Vat 32.1 -> 32.7 C in 2 layers (target 35).
+- Image 23 test (dry run "Image 23 test", 2 bottom layers 300 s, normal 60 s): bottom count 2 found
+  in the file settings; dynamic layers 5-32 settled 23.5 -> ~1.2 s (app log: UV 23.44 s after the
+  wait start on layer 5 = our 23.48 s); layer 12 = dynamic wait switched off by hand; Wait & heat
+  on layers 14-17 (previous wait >= 3 s): heater on +0.05-0.09 s, off at settling, UV 0.98-1.01 s
+  later (the heater thread reacts within its 0.1 s loop) -> image 24 releases 1.15 s after the
+  heater-off request.
+- Image 24 (8.11c, user): dynamic wait also on bottom layers (switch DB, default on); Wait & heat
+  independent of the dynamic wait (fixed waits > 3 s: until slicer wait - 1.2 s).

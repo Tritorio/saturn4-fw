@@ -1,0 +1,107 @@
+TILT (X) MOTOR DRIVER - REGISTER DUMP (read-only), 2026-10-23, libsgtap with `tiltdump` (sgtilt.c)
+====================================================================================================
+Command: `echo tiltdump > /tmp/sgweb/cmd.NNNN` on the printer (idle only, not during a job) ->
+sglog/tiltregs_<time>.txt, "name reg value". Reads under the app's SPI mutex via the app's own
+read op 0x84be4 (it reads twice and retries until two reads agree). NOT read: GSTAT 0x01,
+RAMP_STAT 0x35, ENC_STATUS 0x3b (event bits clear on read). Raw dump: backups/tilt/tiltregs_20261023_185700.txt
+(printer idle after a power cycle, no hold current: user setting 0).
+
+FINDINGS
+- IOIN 0x1100008d: top byte = chip VERSION 0x11 = TMC5130 / TMC2130 family, NOT a TMC5160 (0x30).
+  The register map used by the app is common to both (so far "TMC5160-like" in the notes was right
+  for the addresses, wrong for the chip: no GLOBAL_SCALER, PWM_AUTO 0x72 not present, reads 0).
+- GCONF 0x4 = en_pwm_mode: StealthChop is ON (as the init writes). TPWMTHRS reads 0 (write-only on this
+  family, so no information; the init writes none -> StealthChop at every speed).
+- CHOPCONF 0x000100c3 = TOFF 3, HSTRT 4, HEND 1, TBL 2 (36 clocks), vsense 0, MRES 0 (256 microsteps),
+  intpol 0 (bit 28 NOT set; irrelevant at MRES 0). CORRECTION: the earlier note "256 microsteps + interpolation" was wrong in the
+  interpolation part. HSTRT/HEND only matter in SpreadCycle (never entered while TPWMTHRS = 0).
+- Write-only registers read 0 and say nothing: IHOLD_IRUN, PWMCONF, TPOWERDOWN, TPWMTHRS, VSTART, A1, V1, AMAX, VMAX,
+  DMAX, D1, VSTOP, TZEROWAIT (XTARGET reads back). The ramp values stay known only from the RE of the init (0x84e00).
+- XACTUAL = XTARGET = 0xffffb239 = -19911 (the rest position, as in the tilt trace); TSTEP 0xfffff (standstill).
+- DRV_STATUS 0x80000000: only stst (standstill); no overtemperature / short / open load flags; CS_ACTUAL 0 (hold current 0).
+- PWM_SCALE 0x20 (autoscale amplitude 32 left over from the last move). MSCNT 0x1a8, MSCURACT A 126 / B -213.
+
+STEP 1b BUILT 2026-10-23 (source + live lib 4e6a53de, TILTDRV file created; loaded after a power cycle): with TILTTRACE + TILTDRV every ~20 ms during a move a row
+'D,<XACTUAL>,<DRV_STATUS unsigned>,<PWM_SCALE>' in sglog/tilt_<time>.csv. Only DRV_STATUS (single read) and PWM_SCALE (slow) are sampled: MSCURACT / TSTEP / MSCNT change
+every microstep and the app's read op would retry + log mismatches. Check the app log for 0x93/0x94 spam after the dry run. Remove TILTDRV (and TILTTRACE) afterwards.
+PLAN WAS: sample TSTEP / PWM_SCALE / MSCURACT / DRV_STATUS during a tilt move into the TILTTRACE csv in a dry run
+(rate ~20 ms; each read op takes the SPI mutex and does 2+ transfers - check it does not disturb the move), to see the current
+scale and the PWM amplitude while the motor runs rough. Then step 2 (live tuning with whitelisted WRITES: only the write-only
+registers can be changed blind; readback impossible -> verify by effect / DRV_STATUS).
+
+FIRST DRIVER ROWS (2026-10-23 19:03, the BOOT homing moves, no print): backups/tilt/tilt_20261023_190325.csv, decoded with tools/analysis/tilt_drv.py (-v = every row)
+- 261 'D' rows over 5 moves (speeds 10240 / 5120 / 5688 commanded). No retry spam in the app log (reads of DRV_STATUS + PWM_SCALE every ~20 ms are harmless).
+- Measured speed = 0.927 x the commanded VMAX (10240 -> 9490 steps/s, 5120 -> 4746): constant factor (chip clock). 4746 steps/s at 256 microsteps = 18.5 full steps/s (~5.6 rpm):
+  the motor turns very slowly during a tilt; every full step is ~54 ms.
+- Every move starts ~100-140 ms late: x stays at the start for ~100 ms with stst = 1 (standstill flag) before the steps begin (TZEROWAIT 0x1999 written by the stock move op for
+  wait = 0 moves = wait at zero velocity before the move; probably the ramp-chip dead time, cost ~0.1-0.28 s per move, not noise).
+- PWM_SCALE (StealthChop amplitude) 59-88 and CS_ACTUAL (DRV_STATUS bits 20:16) 18 -> 24 drift UP slowly during and between moves (CS +1 per ~1 s of motion, never reset at standstill);
+  PWM_SCALE dips to ~60 at the start of each move and climbs back (autoscale regulation with PWM_GRAD 4; pwm_symmetric off - the chip is a TMC5130 family part, bit 19 = pwm_symmetric, not autograd).
+- OLA / OLB (open load phase A/B) flicker in 41 of 261 rows while moving, at low speed (typical StealthChop zero-crossing false open-load, no OT / short flags).
+- Not yet known: whether this is the roughness (needs the user's ear next to a trace: a dry-run print with the same TILTTRACE + TILTDRV). Noise suspects now: (1) very slow rotation (18.5
+  full steps/s) = resonance / audible steps at that rate, StealthChop amplitude regulation too slow, (2) velocity jump at start (VSTART = VSTOP = 5120).
+
+DRY-RUN TRACE (2026-10-23 19:09-19:33, job "Image 23 test", 137 layers, two-stage fix on): backups/tilt/tilt_20261023_190325_dry.csv (appended to the boot trace, 103k rows, 17172 D rows)
+- The boot ramp is NOT in print moves: CS_ACTUAL climbs 18 -> 24 at ~1 per s during the homing moves, then is 29 (= the run current 29) for the whole print (jitter 28/29 at move starts).
+  => the boot homing runs at a RAMPING current; print moves at the full run current.
+- Steady motion in a print: speed 4820 steps/s (stage speed 5120 x 0.927 = 33.9 deg/s of the motor = 18.8 full steps/s), PWM_SCALE flat 110-113 (p5-p95 99-118 over all
+  speeds), CS 29, no overtemp/short flags. The amplitude regulation does NOT lag or wobble at constant speed. Release and return identical in PWM_SCALE.
+- Move start: PWM_SCALE dips to ~94-106 for the first 150-300 ms (a 175 spike in the one row sampled at the very start of a release), OLA/OLB flags set in those rows (OL=1..3).
+  Open-load share over a whole move: release (+) 42-58 % of rows at 3000-9000 st/s, return (-) 7-24 %: direction asymmetry (load / back-EMF phase), no fault flag.
+- A move starts ~110-150 ms after its command (stst=1 at x = start) = TZEROWAIT / ramp-chip dead time, every move.
+- Tools: tools/analysis/tilt_drv.py (single rows), tools/analysis/tilt_segments.py (per segment; merges idle gaps: use the instant-speed binning idea instead).
+- Conclusion so far: nothing in DRV_STATUS / PWM_SCALE explains the roughness at constant speed -> suspects left: mechanical resonance at 18.8 full steps/s (very slow motor speed),
+  the velocity step at the start (VSTART = VSTOP), chopper settings (TBL 2, TOFF 3, PWM_FREQ), run current 29 (high for a 36 deg/s tilt). Next = the user's description of WHAT they hear and when.
+
+SIDE EFFECT FOUND 2026-10-23 (after the dry run): the app's read op logs every verify retry ("[fq6630][Info]..:addr 71 [9 0 0 0 66] [9 0 0 0 64]"): the PWM_SCALE (0x71) sampling of
+TILTDRV produced ~6300 lines in log1/log2 (rotating app logs, 4 MB / 1.2 MB). TILTDRV removed from the printer 2026-10-23 ~19:45. A future sampler must read only registers the
+app reads once (DRV_STATUS 0x6f, XACTUAL 0x21) or bypass the verify loop.
+
+RE (chitu V1.5.9, read only): fq6630 ops table 0x210108: [0] init 0x84e00, [2] 0x85138, [3] move 0x85178, [4] stop 0x85250, [6] set-zero 0x85390, [7] is-idle 0x853c8,
+ [11] driver check 0x8530c (reads DRV_STATUS, tests OLA|OLB = 0x60000000, logs 'drv_st %x'), [12] SET CURRENT 0x85210 (idx, run, hold): IHOLD_IRUN = 0x70000 | run << 8 | hold
+ (IHOLDDELAY 7; run = IRUN bits 12:8, hold = IHOLD bits 4:0), [13] endstop enable 0x85490, [14] 0x8557c. Init writes: GCONF 4, CHOPCONF 0x100c3, IHOLD_IRUN 0x70000, PWMCONF 0x504c8
+ (AMPL 0xc8, GRAD 4, FREQ 1, autoscale on, pwm_symmetric off [TMC5130 layout: bit 19], freewheel 0), then A1/AMAX, DMAX/D1, VSTART, VSTOP, RAMPMODE. The app log has no 'drv_st' lines (open-load flags never reach the app's check, or it is never called in a print).
+ PWMCONF / IHOLD_IRUN / TPWMTHRS cannot be read back: observe the effect through CS_ACTUAL (DRV_STATUS 20:16) and PWM_SCALE.
+
+STEP 2 BUILT 2026-10-23 (source + live lib a1ec1955, loaded after the next power cycle; backups of the earlier libs in sglog/live_backup_1854): `tiltreg` command (sgtilt.c sgtilt_reg_cmd)
+  echo "tiltreg status|stock|stealth 0|1|pwm AMPL GRAD FREQ SYMM|chop TOFF TBL HSTRT HEND|irun N" > /tmp/sgweb/cmd.NNNN ; the answer is "cmd":{"res":..} in /tmp/sgweb/live.json.
+  Plain register writes (effective at once, lost at power cycle or `tiltreg stock`), only at standstill (DRV_STATUS stst, under the SPI mutex; else 'moving: retry in the rest phase').
+  UPDATE (user: refuse): pwm refuses AMPL < 64 and GRAD < 1; chop refuses TOFF 1 with TBL < 2 and HSTRT+HEND > 18 (lib f749a978, installed, loads after the power cycle).
+  Rules: IRUN never above the app's run current setting (read live from the machine params, 29 now: user 2026-10-23); TOFF >= 1; microsteps / vsense never written; autoscale always on.
+  PWMCONF layout is the TMC5130's: bit 19 = pwm_symmetric (NOT autograd); stock 0x504c8 = AMPL 200, GRAD 4, FREQ 1, autoscale, symmetric 0. Datasheet rules NOT enforced (user's rule: ask first):
+  TOFF 1 needs TBL >= 2; HSTRT_reg+1 + HEND_reg-3 must be <= 16 (effective); PWM_GRAD 1-15 and AMPL >= 0x40 recommended (GRAD 0 freezes the regulation).
+  App current ramp (RE 0x817d8 / thread 0x8186c): cur IHOLD/IRUN bytes 0x2fdd00/01, target = machine params 0x39fa30+0x101/0x102 (live: hold 0, run 29), step +0x103 = 1, interval +0x104 = 1000 ms,
+  active flag 0x2e1681. The ramp starts after boot (CS 18 -> 29); when the flag is 0 the app writes no more. The driver init (GCONF, CHOPCONF, ...) runs ONCE per boot (log ticks ~14.6 s uptime in 4 boots).
+
+LISTENING TESTS 2026-10-23 20:10-20:40 (dry run "Image 23 test", user listens, tiltreg applied between moves; stock restored at the end, CS/GCONF/CHOPCONF verified):
+  stock (StealthChop, IRUN 29, chop 3 2 4 1)          baseline: loud, "the slower the louder"; user feels the vat move in tiny steps and believes the noise IS those steps
+  SpreadCycle (stealth 0), IRUN 29                    "different, a bit smoother"
+  SpreadCycle, IRUN 22                                "slightly quieter but not nice"
+  StealthChop, IRUN 22                                worse than stock ("stock sounds healthier"), tiny steps more noticeable
+  SpreadCycle, IRUN 29, chop 2 2 2 1 (faster regulation) "same metallic noise as earlier tests, plus random noises after the movement stopped"
+  => the noise does not depend on the chopper or PWM settings; less current is worse (coarser stepping); more current is not allowed (user cap 29).
+  Remaining suspects: torque ripple of the motor at the full-step rate (18.8 full steps/s at 36 deg/s = the ~19 Hz 'tiny steps', speed dependent: slower = lower frequency =
+  more felt) transmitted through gear / linkage / vat (mechanical, outside the driver), the random noises after a stop = the rotor / backlash relaxing when the current
+  drops to IHOLD 0 (user's own hold current setting).
+  Not tested: PWM_GRAD / AMPL / FREQ / SYMM in StealthChop; microstep wave table (MSLUT, write-only, blind); faster tilt speeds as a comparison.
+  StealthChop PWMCONF tuning (IRUN 29): pwm 200 14 1 0 (GRAD 14) "no difference"; pwm 255 1 3 1 (AMPL 255, GRAD 1, FREQ 3, SYMM 1) "sounds like stock"
+  => PWM tuning does not change the noise. Stock restored (GCONF 4, CHOPCONF 0x100c3, PWMCONF 0x504c8, IRUN 29). Driver-side settings are exhausted except the microstep wave table (MSLUT) and hold current.
+
+MSLUT / WAVE (2026-10-23, user chose option 3 after the PWM tests): `tiltreg wave P|cur`, tools/mslut.py (decode/encode of the TMC5130 table, `check PCT MSCNT A B`).
+  Table = quarter wave ofs(i+1) = ofs(i) + base(W) + bit (W 0..3 -> -1..+2; segments X1 X2 X3), chip default (MSLUT 0xAAAAB554 0x4A9554AA 0x24492929 0x10104222 0xFBFFFFFF 0xB5BB777D
+  0x49295556 0x00404222, SEL 0xFFFF8056, START 0x00F70000) decodes to 247 sin within 1.4 LSB; matches MSCURACT of the dump (MSCNT 424: A 126 B -213 vs 127 / -212).
+  wave P: f = sin t + a sin 3t, a = P %, table peak kept 247 (peak current unchanged, average torque 1, 4th-harmonic torque ripple +-a, angle unchanged), P in -9 -6 -3 0 3 6 9 12.
+  Gate (advisor): writes need stst AND XACTUAL == XTARGET (a commanded move shows stst for ~120 ms). `cur` right after a write may show the old value (MSCURACT is only recomputed at the
+  next microstep): verify after the next move with `tools/mslut.py check P MSCNT A B`. lib cb30bd8d installed, loads after a power cycle; backups libsgtap_tiltreg2.so (f749a978).
+  LISTENING (wave): +3 "mostly the same", -3 "can't say", +9 "worse, feeling the steps more", -9 "seems a bit better" -> the NEGATIVE polarity (f = sin t - |a| sin 3t) helps; stronger negative waves next.
+  Chip check of wave +3 (idle, MSCNT 394): default A 163 B -186 -> A 173 B -194 (expected 175 / -195): the encoding works on the chip.
+  `tiltreg lut L0..L7 SEL START` (lib a286252b, installed, loads after a power cycle): raw words from tools/mslut.py (`wave A_PERCENT` prints them), validated in C (ofs(0)=0, 0<=ofs<=248, ofs(256) = START_SIN90 +-2).
+  Tables made (all peak 247): -12 LUT 0xdff7f7f7 0x00000000 0x84208040 0x24489110 0x22224491 0x00080842 0x5addefdf 0x01044a55 SEL 0xc0c02049; -15 ... see `python3 tools/mslut.py wave -15` etc.
+
+ON HOLD (user 2026-10-23 ~20:35, reopen on request): "None of the attempts really made much of a difference." Stock restored on the printer (GCONF 4, CHOPCONF 0x100c3, PWMCONF 0x504c8, IRUN 29, default wave table verified with
+`tiltreg cur`: MSCNT 394 A 163 B -186). TILTTRACE and TILTDRV removed (the old trace file sglog/tilt_20261023_190325.csv, 2.6 MB, stays; copies in backups/tilt/).
+RESULT: no driver-side setting (mode, current <= 29, chopper, PWM, microstep wave harmonic -9..+9 %) removed the noise; -9 % wave "a bit better", +9 % worse, the rest "no/barely any difference".
+The noise is most likely mechanical (full-step torque ripple ~19 Hz at 36 deg/s through gear / linkage / vat). Untested ideas: faster tilt speeds as a comparison (tiltset), hold current > 0,
+stronger negative waves (-12..-26 % tables ready: tiltreg lut, tools/mslut.py wave).
+LIVE STATE: libsgtap a286252b = build 33 + tiltdump + tiltreg (status/stock/stealth/pwm/chop/irun/wave/lut/cur), loads at the next power cycle (the running app has the previous test lib, same commands
+except lut); all commands are inert unless sent by hand (echo "tiltreg ..." > /tmp/sgweb/cmd.NNNN). Backups of earlier libs: sglog/live_backup_1854/ (128aacd5 = build 33 exactly). Source only, no image.

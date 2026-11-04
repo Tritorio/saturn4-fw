@@ -1,0 +1,20 @@
+# build output and local working data
+.venv/
+work/
+build/
+out/
+backups/
+Saturn4Ultra_OTA/
+
+# NEVER commit: passwords, Elegoo files
+mods/customer/mod/shadow
+mods/release/shadow
+*.pyc
+__pycache__/
+*:Zone.Identifier
+repair firmware/
+ChituUpgrade*.bin
+ChituFPGA.bin
+
+# local assistant settings
+.claude/settings.local.json

@@ -1,0 +1,40 @@
+BOARD COMPATIBILITY: what to compare before the mod is published (2026-10-27)
+================================================================================
+Why: the user's board (SigmaStar SSD202D, 128 MB, Samsung eMMC, Lattice FPGA module V2.1.5, two stepper drivers) is not the only
+variant on the market. The stock V1.5.9 image carries drivers for several Wi-Fi chips (Realtek 8188fu / 8192fu / 8821cu, AIC 8800), so
+Elegoo ships ONE image for several board variants and the differences are found at run time. Nobody has compared units yet.
+
+BASELINE = docs/board_report_project_printer.txt (made with tools/board_report.sh, read only, no personal data):
+- SoC infinity2m "SSC011A-S01A-S" (SSD202D), Linux 4.9.84, 2 x Cortex-A7, 116 MB RAM
+- NAND: IPL / IPL_CUST / UBOOT / ENV / KEY_CUST / LOGO / KERNEL / RECOVERY + UBI (rootfs, miservice, customer, appconfigs, parameter)
+- eMMC 7.3 GB "8GTF4R" (Samsung, date 07/2023): p1 vfat 512 MB, p2 exfat 512 MB, p3 exfat 6.3 GB
+- U-Boot env: cbd_board_name=zhinengpai-3dbs009, dispout=SLM40_480x800_ROTATE, chitu_factory_mode=2
+- Wi-Fi: USB Realtek 0bda:c811 (module 8821cu), camera USB a108:2240 "UC01 HD Camera", USB hub 1a86:8091
+- FPGA: Lattice (fpga_lattice_init ok), "FPGA version:3.3, LCD:b3.13, build:8", 15120 x 6230 (16K)
+- stepper driver: tmc2209_init in the app log; gauge board image upgrade_cbd_app_lcd_strain_gauge_1.1.0.bin (md5 b6979fd4...)
+- stock V1.5.9: ChituUpgrade.bin 2fa5c763a49e565b963ec0cf87704762, chitu 116dfee541b33b913a2fd898b0c7c0f4, ChituFPGA.bin 36ac00b6...
+
+WHAT THE MOD ASSUMES (what a different unit could break)
+1. The app: only V1.5.9 (the code is patched / hooked at fixed addresses; libsgtap refuses when its code-word checks fail).
+2. Gauge board on ttyS1 with the cs1237 protocol (docs/strain_gauge_protocol.txt); a unit without it has no force data.
+3. Tilt (X) and Z drivers and their register writes (sgtilt.c / sgmach.c); a different driver chip would act differently.
+4. Flash layout: the release image replaces ONLY the customer UBI volume (kernel, rootfs, U-Boot stay); it needs the same mtd / UBI
+   layout (customer volume 39.9 MB) and the same hard-coded kernel size in bootcmd.
+5. The image REPLACES /customer/resources/chitu with the patched V1.5.9 binary: a unit with another chitu build would be changed to it.
+6. Return to stock uses the cached V1.5.9 image in /media/mmcblk0p1 and the EMMCUpgradeEnable variable: needs that file and the same U-Boot.
+7. LCD / FPGA / UV / fan control exists only in the AA line (not in the normal / release image).
+
+WHAT TO ASK VOLUNTEERS (nothing is flashed for the comparison)
+- run tools/board_report.sh (see its header; it only reads) and post the text; MAC addresses are masked, there is no serial number,
+  no Wi-Fi data, no file names and no printer ID in it
+- say what they bought (date / shop / printer sticker revision) and which firmware the screen shows
+- do NOT flash the mod before the report was compared
+
+HOW TO READ THEIR REPORT (differences that matter, in order)
+1. chitu md5 = 116dfee5... and ChituUpgrade.bin md5 = 2fa5c763... -> same stock firmware: the mod image can be used
+2. /proc/mtd and the UBI volume sizes equal -> the customer-only image fits
+3. cbd_board_name / dispout / FPGA version / gauge image md5 equal -> same electronics revision
+4. different Wi-Fi USB id, camera, eMMC maker -> harmless for the mod (not touched)
+5. anything else: write it down here and ask before releasing
+
+OPEN: no other unit compared yet. Git commit and publication wait for the first foreign report.

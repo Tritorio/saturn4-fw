@@ -1,0 +1,708 @@
+<title>Saturn 4 Ultra Mod Manual</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Roboto+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a technical manual. Sticky contents rail on the left (desktop), one reading column;
+   each feature section = what it does / why it exists / how to use it. Colours from the dashboard. */
+:root {
+  --bg: #f6f7f4; --paper: #ffffff; --ink: #17191a; --ink2: #44494b; --muted: #687072;
+  --line: #dfe3dc; --tint: #eef3ea; --accent: #2f7d18; --accent-ink: #ffffff;
+  --blue: #1f63c7; --warn: #8a5a00; --warn-bg: #fff4dc; --bad: #b42318;
+  --code-bg: #eef0ec;
+  --f-body: Roboto, "Segoe UI", system-ui, -apple-system, sans-serif;
+  --f-mono: "Roboto Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0b0c0b; --paper: #161816; --ink: #f2f3f1; --ink2: #c3c7c2; --muted: #969c95;
+    --line: #2a2e29; --tint: #1b2418; --accent: #79d853; --accent-ink: #0b1a05;
+    --blue: #7fb0ff; --warn: #f0b429; --warn-bg: #2a2310; --bad: #ff7a70;
+    --code-bg: #20231f; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0b0c0b; --paper: #161816; --ink: #f2f3f1; --ink2: #c3c7c2; --muted: #969c95;
+  --line: #2a2e29; --tint: #1b2418; --accent: #79d853; --accent-ink: #0b1a05;
+  --blue: #7fb0ff; --warn: #f0b429; --warn-bg: #2a2310; --bad: #ff7a70;
+  --code-bg: #20231f; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font: 16px/1.6 var(--f-body); }
+a { color: var(--accent); text-underline-offset: 2px; }
+a:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+code, .mono { font-family: var(--f-mono); font-size: .88em; }
+code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+h1, h2, h3 { text-wrap: balance; line-height: 1.25; }
+
+.wrap { max-width: 1180px; margin: 0 auto; padding-block: 32px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 48px; }
+@media (max-width: 880px) { .wrap { grid-template-columns: minmax(0, 1fr); gap: 24px; padding-block: 20px 48px; } }
+
+/* contents */
+nav.toc { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 24px); align-self: start; font-size: 14px; }
+nav.toc .eyebrow { margin-bottom: 8px; }
+nav.toc ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; counter-reset: toc; }
+nav.toc li { counter-increment: toc; }
+nav.toc a { display: grid; grid-template-columns: 26px 1fr; padding: 4px 8px; border-radius: 6px; color: var(--ink2); text-decoration: none; }
+nav.toc a::before { content: counter(toc); color: var(--muted); font-variant-numeric: tabular-nums; }
+nav.toc a:hover { background: var(--tint); color: var(--ink); }
+@media (max-width: 880px) {
+  nav.toc { position: static; background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+  nav.toc ol { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+}
+
+main { min-width: 0; max-width: 760px; }
+.eyebrow { font-size: 12px; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+header.top h1 { font-size: clamp(30px, 5vw, 42px); margin: 6px 0 10px; font-weight: 700; letter-spacing: -.01em; }
+header.top .lead { font-size: 18px; color: var(--ink2); margin: 0 0 18px; max-width: 62ch; }
+.facts { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 8px; padding: 0; list-style: none; }
+.facts li { background: var(--paper); border: 1px solid var(--line); border-radius: 999px; padding: 3px 12px; font-size: 13px; color: var(--ink2); }
+.facts b { color: var(--ink); font-weight: 500; }
+
+section.s { padding-top: 40px; margin-top: 40px; border-top: 1px solid var(--line); scroll-margin-top: 16px; }
+section.s > h2 { font-size: 26px; margin: 4px 0 12px; font-weight: 700; }
+section.s h3 { font-size: 18px; margin: 28px 0 8px; font-weight: 500; }
+section.s p { margin: 0 0 12px; max-width: 68ch; }
+section.s ul, section.s ol { margin: 0 0 12px; padding-left: 22px; max-width: 68ch; }
+section.s li { margin: 3px 0; }
+.where { font-size: 14px; color: var(--muted); margin: -4px 0 14px; }
+
+.why { background: var(--tint); border-radius: 10px; padding: 14px 16px; margin: 16px 0; }
+.why .eyebrow { color: var(--accent); margin-bottom: 4px; }
+.why p:last-child { margin-bottom: 0; }
+.note { background: var(--warn-bg); border-radius: 10px; padding: 12px 16px; margin: 16px 0; font-size: 15px; }
+.note b { color: var(--warn); }
+
+.tbl { overflow-x: auto; margin: 12px 0 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; padding: 8px 12px; border-top: 1px solid var(--line); vertical-align: top; }
+thead th { border-top: 0; font-weight: 500; color: var(--muted); font-size: 12px; letter-spacing: .05em; text-transform: uppercase; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+td code { white-space: nowrap; }
+
+.kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 16px; margin: 8px 0 16px; font-size: 15px; }
+.kv dt { font-weight: 500; }
+.kv dd { margin: 0; color: var(--ink2); }
+@media (max-width: 520px) { .kv { grid-template-columns: minmax(0, 1fr); gap: 2px; } .kv dd { margin-bottom: 8px; } }
+
+pre { background: var(--code-bg); border-radius: 10px; padding: 12px 14px; overflow-x: auto; font: 14px/1.55 var(--f-mono); margin: 8px 0 16px; }
+.chip { display: inline-block; border-radius: 999px; padding: 0 8px; font-size: 13px; font-weight: 500; }
+.c-green { color: var(--accent); border: 1px solid currentColor; }
+.c-blue { color: var(--blue); border: 1px solid currentColor; }
+.c-white { color: var(--ink); border: 1px solid currentColor; }
+
+figure.cycle { margin: 16px 0 20px; background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 14px 14px 10px; overflow-x: auto; }
+figure.cycle svg { display: block; min-width: 640px; width: 100%; height: auto; }
+figure.cycle figcaption { font-size: 13px; color: var(--muted); margin-top: 6px; }
+.svg-ink { fill: var(--ink); } .svg-ink2 { fill: var(--ink2); } .svg-muted { fill: var(--muted); }
+.svg-box { fill: var(--tint); stroke: var(--line); }
+.svg-acc { fill: var(--accent); } .svg-acc-s { stroke: var(--accent); }
+.svg-line { stroke: var(--muted); }
+
+figure.shot { margin: 14px 0 18px; }
+figure.shot img { display: block; max-width: 100%; height: auto; border-radius: 12px; border: 1px solid var(--line); background: #000; }
+figure.shot figcaption { font-size: 13px; color: var(--muted); margin-top: 6px; max-width: 68ch; }
+footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+@media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
+</style>
+
+<div class="wrap">
+<nav class="toc" aria-label="Contents">
+  <div class="eyebrow">Contents</div>
+  <ol>
+    <li><a href="#start">Getting started</a></li>
+    <li><a href="#login">Login and printer password</a></li>
+    <li><a href="#status">Status card</a></li>
+    <li><a href="#alerts">Print alerts</a></li>
+    <li><a href="#cpu">CPU and UI loop sleep</a></li>
+    <li><a href="#features">Features list</a></li>
+    <li><a href="#heating">Resin heating</a></li>
+    <li><a href="#force">Force monitor</a></li>
+    <li><a href="#calibrate">Calibration</a></li>
+    <li><a href="#wait">Dynamic wait after retract</a></li>
+    <li><a href="#waitheat">Wait &amp; heat</a></li>
+    <li><a href="#gaugesync">Gauge sync</a></li>
+    <li><a href="#tilt">Tilt speed</a></li>
+    <li><a href="#dynlift">Dynamic lift</a></li>
+    <li><a href="#slow">Slow layers</a></li>
+    <li><a href="#files">Files</a></li>
+    <li><a href="#settings">Settings and profiles</a></li>
+    <li><a href="#machine">Machine settings file</a></li>
+    <li><a href="#logs">Job history and logs</a></li>
+    <li><a href="#developer">Developer card</a></li>
+    <li><a href="#tiltmove">Tilt Move</a></li>
+    <li><a href="#exposure">Manual Exposure</a></li>
+    <li><a href="#multiexp">Multi Exposure</a></li>
+    <li><a href="#zmonitor">Z monitor</a></li>
+    <li><a href="#flex">Flex Plate</a></li>
+    <li><a href="#wide">Wide layout</a></li>
+    <li><a href="#background">What runs in the background</a></li>
+    <li><a href="#safety">Switches and recovery</a></li>
+    <li><a href="#reference">Settings files on the printer</a></li>
+  </ol>
+</nav>
+
+<main>
+<header class="top">
+  <div class="eyebrow">Elegoo Saturn 4 Ultra 16K · firmware V1.5.9 + mod</div>
+  <h1>Mod user manual</h1>
+  <p class="lead">What each function of the modded printer does, why it exists, and how to use it. The mod adds a force monitor, resin heating control, a dynamic wait and dynamic lift, a fixed two-stage tilt, slow layers, settings profiles, manual exposure and multi exposure, a Z monitor and flex plate compensation, all driven from a password-protected dashboard served by the printer itself.</p>
+  <ul class="facts">
+    <li>Build <b>45</b> · mod <b>8.40</b> (normal)</li>
+    <li>As of <b>31 October 2026</b></li>
+    <li>Screenshots: <b>live dashboard</b>, every card fully expanded (example data where marked)</li>
+    <li>Each section: picture · why it exists · how to use it</li>
+  </ul>
+</header>
+
+<section class="s" id="start">
+  <div class="eyebrow">1 · Basics</div>
+  <h2>Getting started</h2>
+  <figure class="shot"><img src="manual_img/header.webp" width="594" height="110" alt="Dashboard header with the printer name, the printer clock, build and mod version and three connection dots: Printer, Force sensor, Controls" loading="lazy"><figcaption>The header: printer name, clock, build and mod version, and the three connection dots.</figcaption></figure>
+  <div class="why"><div class="eyebrow">Why it exists</div>
+    <p>The stock printer has no web interface of its own beyond the slicer connection. The mod serves a dashboard from the printer itself, so any browser on the network can watch a print, change settings and manage files with nothing to install on a PC. The build and mod version in the header tell you at any moment which image is installed.</p>
+  </div>
+  <p>Open <code>http://&lt;printer address&gt;/</code> in a browser on the same network; it redirects to the dashboard page that the printer's web server delivers on port 3030. The controls of the dashboard go to a small helper on port 8080.</p>
+  <dl class="kv">
+    <dt>Printer</dt><dd>The printer's own status connection (status, progress, files, print commands).</dd>
+    <dt>Force sensor</dt><dd>The live force feed of the mod. Red = no new readings (logger stopped, or the gauge board is silent).</dd>
+    <dt>Controls</dt><dd>The helper on port 8080. Red = buttons that change settings will not work.</dd>
+  </dl>
+  <p>Settings you change apply at once or at the next safe moment of a print, and they are saved on the printer: they survive a reboot. The dashboard stores nothing in your browser except a few per-browser choices (for example whether the Features list is open and the theme).</p>
+  <p><b>Theme.</b> The button at the right end of the header switches the dashboard between the dark theme (default) and a light theme. The sun means “switch to light”, the moon “switch to dark”. The choice is remembered in that browser only; another browser or device starts dark.</p>
+  <div class="note"><b>Keep the printer on a trusted network.</b> The printer's own web server on port 3030 (stock behaviour) serves the whole file system read-only without a password and takes print commands, file deletes and uploads without one. The mod's helper on port 8080, which writes all settings, needs the printer password (section 2).</div>
+</section>
+
+<section class="s" id="login">
+  <div class="eyebrow">2 · Basics</div>
+  <h2>Login and printer password</h2>
+  <figure class="shot"><img src="manual_img/header.webp" width="594" height="110" alt="Dashboard header with the printer name, the printer clock, the build and mod version, the Log in button and the theme button" loading="lazy"><figcaption>The header: the Log in button (with the minutes left once you are logged in) and the theme button.</figcaption></figure>
+  <div class="why"><div class="eyebrow">Why it exists</div>
+    <p>The dashboard can change the printer's settings, restart it, or even put the original firmware back. Anyone on the network could press those buttons, so everything that writes to the printer needs the printer password. Reading and watching stay open.</p>
+  </div>
+  <p>Until you log in the dashboard is <b>view only</b>: a banner says so and every control that changes something is greyed. A click on such a control opens the login dialog. The password is the printer's root (telnet) password; <b>Stay logged in on this computer</b> keeps the login after the browser is closed. The header button shows the minutes left.</p>
+  <dl class="kv">
+    <dt>No time limit</dt><dd>A login never expires by itself: it ends when you log out, when the printer restarts, or when the password is changed (at most 20 logins at a time).</dd>
+    <dt>Log out · Log out all browsers</dt><dd>Ends this login, or every login on every device. A restart of the printer also ends all logins.</dd>
+    <dt>Change password…</dt><dd>Needs the current password and the new one twice. Five wrong tries lock the login for 5 minutes. <b>A firmware flash puts back the password of the image</b>; the public release image uses a generic password, so change it after flashing.</dd>
+  </dl>
+  <div class="note">Not covered by the login: the printer's own functions on port 3030 (start, pause and stop a print, delete and upload files). They work like on the printer's screen. Restoring the stock firmware asks for the password once more.</div>
+</section>
+
+<section class="s" id="status">
+  <div class="eyebrow">3 · Dashboard</div>
+  <h2>Status card</h2>
+  <figure class="shot"><img src="manual_img/status.webp" width="592" height="592" alt="Status card showing Idle, no job, UV LED and resin tank temperatures, release film counter, CPU RAM and storage meters and the Features row" loading="lazy"><figcaption>Status card while idle: no job loaded, temperatures, release film counter, the system row and the Features row.</figcaption></figure>
+  <p>During a print the text column under the ring ends with <b>Z position</b>: the print height printed so far (plate position minus the Z zero, read once per layer after the retract; see the Z monitor).</p>
+  <div class="why"><div class="eyebrow">Why it exists</div>
+    <p>To follow a print from any room without walking to the touch screen, and to see the health of the machine (CPU, memory, free space, film wear) that the stock screen does not show.</p>
+  </div>
+  <ul>
+    <li><b>Ring and status</b>: progress in percent (layer / total layers, as the printer screen), the printer state and the print phase.</li>
+    <li><b>Thumbnail and file name</b> of the current or last job, with <b>Layer</b>, <b>Elapsed</b> and <b>Remaining</b>. Remaining comes from the pace of the last five layers, so it stays right when the dynamic wait shortens the waits.</li>
+    <li><b>Pause / Resume</b> and <b>Stop</b> during a print. Stop asks for confirmation: a stopped print cannot be resumed.</li>
+    <li><b>Temperatures</b>: UV LED and resin tank (vat), and the <b>release film</b> counter (layers on the current film).</li>
+    <li><b>System row</b>: CPU, RAM and storage of the printer's computer. Tap <b>CPU</b> for the UI loop sleep, tap <b>Storage</b> for every partition.</li>
+    <li><b>Features row</b>: how many features are on and <b>Show list</b>. Small pills next to it say <b>EDITED</b> while a manual exposure time is set and <b>FLEX PLATE ON / OFF / CUSTOM</b> for the plate compensation. The cards that are not features (Flex Plate, Tilt Move, Z monitor) open from the Settings and Developer cards.</li>
+  </ul>
+  <figure class="shot"><img src="manual_img/storage.webp" width="592" height="599" alt="Storage list: print files, logs and job CSVs, thumbnails and machine data, app volume with used and total size" loading="lazy"><figcaption>The storage list, opened from the Storage meter: the logs and job CSVs live on their own partition.</figcaption></figure>
+</section>
+
+<section class="s" id="alerts">
+  <div class="eyebrow">4 · Dashboard · Status card</div>
+  <h2>Print alerts</h2>
+  <div class="why"><div class="eyebrow">Why it exists</div>
+    <p>When the printer stops a print by itself (for example the foreign matter guard), the stock screen shows a message but the dashboard showed nothing: from another room you only saw that the print had ended. The dashboard now tells you why.</p>
+  </div>
+  <p>A <b>Print alert</b> dialog opens in the browser when the printer's own log reports one of these during a print: <b>foreign matter detected</b> (the force limit was exceeded while the plate moved down), <b>too much resin</b> or <b>too little resin</b> (the resin level is outside the lines), <b>resin probe failed</b>, <b>auto-leveling failed</b>, <b>force sensor calibration failed</b>, <b>homing failed</b>, or a <b>print error code</b>. Each alert is shown once; <b>OK</b> closes it. If the dashboard was closed when it happened, the dialog appears at the next visit.</p>
+  <div class="note">Only conditions that the printer writes to its log are covered. Other stops (temperature, motor or screen connection, sensor wiring) are not recognised yet: if one happens, keep the printer's log (<code>/media/mmcblk0p2/log1</code>) so the line can be added.</div>
+</section>
+
+<section class="s" id="cpu">
+  <div class="eyebrow">5 · Dashboard · Status card</div>
+  <h2>CPU and UI loop sleep</h2>
+  <figure class="shot"><img src="manual_img/cpu.webp" width="592" height="756" alt="Status card with the UI loop sleep block opened under the CPU meter: Idle and Printing steppers in milliseconds, a note on the steps, Defaults and Apply buttons" loading="lazy"><figcaption>The UI loop sleep block, opened from the CPU meter.</figcaption></figure>
+  <div class="why"><div class="eyebrow">Why it exists</div>
+    <p>The stock firmware keeps both CPU cores at 100 % all the time, even when idle: three loops of the app never pause (the touch-screen loop, a camera scan and a network poll). A patch adds short sleeps to all three; this setting lets you choose the touch-screen one. Nobody touches the screen during a print, so the printing value can be much longer, which leaves the CPU free for the print and for the mod's measurements.</p>
+  </div>
+  <p>You set two values from 5 to 500 ms: <b>Idle</b> (no print running) and <b>Printing</b> (a job is active). Changes apply at once and are kept after a reboot. Defaults: 50 ms idle, 200 ms printing.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>UI loop sleep (idle)</th><th class="num">Idle CPU</th><th>Touch screen</th></tr></thead>
+    <tbody>
+      <tr><td>none (stock firmware)</td><td class="num">≈ 100 %</td><td>normal</td></tr>
+      <tr><td>5 ms</td><td class="num">43 %</td><td>normal</td></tr>
+      <tr><td>10 ms</td><td class="num">35 %</td><td>normal</td></tr>
+      <tr><td>50 ms (default idle)</td><td class="num">≈ 18 %</td><td>good</td></tr>
+      <tr><td>200 ms (default printing)</td><td class="num">≈ 7 %</td><td>sluggish, still usable</td></tr>
+      <tr><td>500 ms (test)</td><td class="num">≈ 4 %</td><td>very slow</td></tr>
+    </tbody>
+  </table></div>
+  <p>The print's own timing (waits, exposure, moves) runs in a separate thread with its own 10 ms step, so this setting does not change print timing. The camera and network pauses are fixed at 20 ms.</p>
+</section>
+
+<section class="s" id="features">
+  <div class="eyebrow">6 · Dashboard · Status card</div>
+  <h2>Features list</h2>
+  <figure class="shot"><img src="manual_img/features.webp" width="592" height="1023" alt="Status card with the Features list open: Heating, Exposure and System groups on the left and the Tilt group on the right, each row with an ON or OFF switch" loading="lazy"><figcaption>The Features list: one row per feature with its switch, grouped as Heating, Exposure, System and Tilt.</figcaption></figure>
+  <div class="why"><div class="eyebrow">Why it exists</div>
+    <p>The mod has many features, each with its own card. The list is the one place to see what is on and off, and to switch features without opening their cards.</p>
+  </div>
+  <p><b>Show list</b> opens it (the choice is remembered). The switch on the right turns the feature on or off with the same checks as its card; the name opens the card. The header shows the count: “5 on · 3 off”.</p>
+  <dl class="kv">
+    <dt>Heating</dt><dd>Pre-heat (with the checkbox <i>Plate into the resin</i>) and Heating during print (with <i>Wait &amp; heat</i>).</dd>
+    <dt>Exposure</dt><dd><b>Manual Exposure</b>: on while a bottom or normal exposure time set from the dashboard is armed or in force (section 22). Switching it off puts the file's times back; it works with or without a print job. <b>Multi Exposure</b>: own UV time per screen quadrant (section 23); the two exclude each other.</dd>
+    <dt>Tilt</dt><dd>Tilt Custom Speed, Dynamic wait, Dynamic lift, Slow layers (with <i>Beep before slow layers</i>).</dd>
+  </dl>
+  <p>The two-stage fix and the gauge sync have no row: the fix is always on and the gauge sync is on by default (its switch is in its card). The name of a row opens its card; Flex Plate, Tilt Move and Z monitor have no row (Flex Plate opens from the Settings card, the other two from the Developer card).</p>
+</section>
+
+<section class="s" id="heating">
+  <div class="eyebrow">7 · Print · Resin heating</div>
+  <h2>Resin heating</h2>
+  <figure class="shot"><img src="manual_img/heating.webp" width="592" height="1003" alt="Resin heating card with pre-heat and heating during print, each with its temperature stepper and presets, the Plate into the resin switch, Wait and heat and an Apply button" loading="lazy"><figcaption>The Resin heating card: pre-heat and heating during print, each with its temperature, plus Plate into the resin and Wait &amp; heat.</figcaption></figure>
+  <div class="why"><div class="eyebrow">Why it exists</div>
+    <p>Warm resin is thinner: it flows back under the part faster after each peel and needs less force to release. Setting the heater from the browser, with a wider range than the touch screen offers, makes it easy to keep the vat at a steady, known temperature for every print.</p>
+  </div>
+  <p>Open it from the Features list (click Pre-heat or Heating during print).</p>
+  <dl class="kv">
+    <dt>Pre-heat</dt><dd>Heats the vat now, while idle, to 20–40 °C. Above 30 °C the card warns: the resin is not stirred and the vat can get very hot.</dd>
+    <dt>Heating during print</dt><dd>Keeps the vat at the print temperature, 20–50 °C, during a job. The print starts when the vat reaches the target.</dd>
+    <dt>Plate into the resin</dt><dd>When pre-heat is switched on from the dashboard, the plate goes down at 5 mm/s to 40 mm, then at 2 mm/s to the pre-heat position (6 mm with a flex plate, 3 mm with the factory Z values, section 25), so the plate sits in the warm resin. When pre-heat is switched off it goes up to 50 mm. Never from the printer's screen. It needs an idle printer, Z homed and the foreign matter guard armed.</dd>
+    <dt>Plate rises before a print</dt><dd>With pre-heat and this option on, <b>Start print</b> in the Files card first raises the plate to 50 mm, waits until it has arrived and only then starts the print. If it cannot be raised the print does not start and a message says why. A print started on the printer's own screen is not covered.</dd>
+    <dt>Wait &amp; heat</dt><dd>Also heats in the wait after retract (section 11).</dd>
+  </dl>
+  <p>The force chart draws the vat temperature on its right axis. Press <b>Apply</b> to set the heater; the settings are saved on the printer.</p>
+</section>
+
+<section class="s" id="force">
+  <div class="eyebrow">8 · Dashboard</div>
+  <h2>Force monitor</h2>
+  <figure class="shot"><img src="manual_img/force.webp" width="592" height="705" alt="Force card with the live force in grams, job peak, job min and phase, the dynamic wait status, the force chart with the vat temperature, Auto-tare when idle and the buttons Dynamic wait, Gauge sync, Dynamic lift, Tare and Calibrate" loading="lazy"><figcaption>The Force card while idle. Dynamic wait and Dynamic lift are green because both are on.</figcaption></figure>
+  <div class="why"><div class="eyebrow">Why it exists</div>
+    <p>Peel force and the time the resin needs to settle were invisible on the stock printer. Measuring them shows which layers are risky and how much each setting helps, and it is the basis of the dynamic wait and the dynamic lift. The tare in the wait removes the slow drift of the zero during a long print, so each layer's peel is measured from its own baseline.</p>
+  </div>
+  <p>The printer has a force sensor (strain gauge) that the stock firmware uses for levelling. The mod reads its values passively, about 5 times per second, and turns them into grams.</p>
+  <ul>
+    <li><b>Live force</b> in grams, with the raw sensor value and the time of the reading.</li>
+    <li><b>Job peak</b>, <b>Job min</b> and <b>Phase</b> (calibrate, probe, level, exposure, lift, drop, settle, rest).</li>
+    <li><b>Chart</b> of the last 30 s, 2 min or 10 min: force in green on the left axis, vat temperature on the right axis (0–50 °C). Hover or tap for exact values.</li>
+    <li><b>Auto-tare when idle</b>: with no print for 10 s the zero follows the sensor every 10 s, but only when the last 10 s are steady and within 25 g of the current zero. A weight on the plate is therefore never tared away.</li>
+    <li><b>Tare</b> (green when on) switches on <i>tare in the wait</i>: in every wait after retract, once the force has settled, the zero moves to that settled level. It works with or without the dynamic wait.</li>
+    <li>The buttons <b>Dynamic wait</b> and <b>Dynamic lift</b> open their cards and are green while the feature is on; <b>Gauge sync</b> and <b>Calibrate</b> open theirs. Cards opened from here stack below in click order, the last on top.</li>
+  </ul>
+  <figure class="shot"><img src="manual_img/stages.webp" width="592" height="729" alt="Force card with the Show stages switch on, the chart shaded by print stage" loading="lazy"><figcaption>The Force card with Show stages on: each stage of a layer is shaded behind the force line.</figcaption></figure>
+  <h3>Show stages</h3>
+  <p>The <b>Show stages</b> switch above the chart shades each stage of a layer behind the force line: <i>Lift</i> (release), <i>Retract</i> (return), <i>Wait before exposure</i>, <i>Exposure</i> and <i>Wait after exposure</i>. The tooltip names the stage and the layer. The CSV has the phase <code>rest</code> for the wait after exposure.</p>
+</section>
+
+<section class="s" id="calibrate">
+  <div class="eyebrow">9 · Dashboard · Force card</div>
+  <h2>Calibration</h2>
+  <figure class="shot"><img src="manual_img/calibrate.webp" width="592" height="517" alt="Calibration card with three weight fields, six steps from Zero plate empty to Weight 3 and the Capture zero button" loading="lazy"><figcaption>The Calibration card at the first step, before any weights are entered.</figcaption></figure>
+  <div class="why"><div class="eyebrow">Why it exists</div>
+    <p>The sensor reports raw counts that differ from printer to printer. A three-weight fit is more reliable than a single weight and shows at once whether the sensor is linear. Each calibration is also appended to <code>sglog/calibration.log</code>.</p>
+  </div>
+  <p>Type the three weights, then follow the six steps: empty plate, weight 1, empty, weight 2, empty, weight 3. Each capture waits until the reading is steady (15 readings varying by less than 150 counts), then averages 25 readings. The result <b>k</b> (counts per gram) is the slope of a straight-line fit through all points.</p>
+</section>
+
+<section class="s" id="wait">
+  <div class="eyebrow">10 · Print</div>
+  <h2>Dynamic wait after retract</h2>
+  <figure class="shot"><img src="manual_img/wait.webp" width="592" height="716" alt="Dynamic wait card with the on switch, bottom layers switch, gradient, window and minimum wait steppers, the ignore the slicer wait switch and the wait chart of the last 30 layers" loading="lazy"><figcaption>The Dynamic wait card with the explanations shown (the ? button): on, also on bottom layers, 1.0 g/s for 1.0 s, minimum 1.0 s.</figcaption></figure>
+  <div class="why"><div class="eyebrow">Why it exists</div>
+    <p>A fixed wait has to cover the worst layer. Measured on test prints, settling took 24 s on an early large layer and about 1 s later on; big cross-sections took far longer than small ones. A replay of the rule on a full test print cut the total wait by 27 % (49 → 36 minutes) while the force at the moment of exposure stayed within a few grams. Exposing only after the resin has settled keeps layers consistent without wasting time on easy layers.</p>
+  </div>
+  <p>After the vat returns, the printer waits a fixed time (the slicer's “wait after retract”) before the next exposure. With the dynamic wait on, the mod watches the force during that wait and starts the exposure as soon as the resin has settled. Open the card from the Force card or the Features list; the <b>?</b> button shows or hides the explanations.</p>
+  <figure class="cycle">
+    <svg viewBox="0 0 760 150" role="img" aria-label="One layer: wait after retract, exposure, release, Z move, return. The dynamic wait ends the wait early, Wait and heat heats during it, slow layers are set at its start.">
+      <rect class="svg-box" x="10" y="44" width="230" height="44" rx="8"/>
+      <rect class="svg-box" x="248" y="44" width="110" height="44" rx="8"/>
+      <rect class="svg-box" x="366" y="44" width="120" height="44" rx="8"/>
+      <rect class="svg-box" x="494" y="44" width="110" height="44" rx="8"/>
+      <rect class="svg-box" x="612" y="44" width="138" height="44" rx="8"/>
+      <text class="svg-ink" x="125" y="71" font-size="15" text-anchor="middle" font-weight="500">Wait after retract</text>
+      <text class="svg-ink" x="303" y="71" font-size="15" text-anchor="middle" font-weight="500">Exposure</text>
+      <text class="svg-ink" x="426" y="71" font-size="15" text-anchor="middle" font-weight="500">Release (tilt)</text>
+      <text class="svg-ink" x="549" y="71" font-size="15" text-anchor="middle" font-weight="500">Z move</text>
+      <text class="svg-ink" x="681" y="71" font-size="15" text-anchor="middle" font-weight="500">Return (tilt)</text>
+      <line class="svg-acc-s" x1="14" y1="34" x2="14" y2="20" stroke-width="2"/>
+      <text class="svg-acc" x="20" y="24" font-size="13" font-weight="500">slow layer set</text>
+      <line class="svg-acc-s" x1="20" y1="104" x2="236" y2="104" stroke-width="3" stroke-linecap="round"/>
+      <text class="svg-ink2" x="20" y="124" font-size="13">heated (Wait &amp; heat)</text>
+      <path class="svg-acc-s" d="M236 30 L236 92" stroke-width="2" stroke-dasharray="4 3" fill="none"/>
+      <text class="svg-acc" x="232" y="24" font-size="13" font-weight="500" text-anchor="end">settled → exposure</text>
+      <line class="svg-line" x1="366" y1="140" x2="750" y2="140" stroke-width="1"/>
+      <text class="svg-muted" x="558" y="134" font-size="12" text-anchor="middle">tilt moves use the profile set in the wait</text>
+    </svg>
+    <figcaption>One layer, left to right. The mod acts only in the wait: it can end it early, heat during it, and switch the tilt profile at its start, before that layer's release and return.</figcaption>
+  </figure>
+  <h3>The settling rule</h3>
+  <dl class="kv">
+    <dt>Gradient below</dt><dd>0.2–5 g/s (default 1.0). The force must change slower than this…</dd>
+    <dt>For at least</dt><dd>0.6–3 s (default 1.0). …over this window (a straight-line fit of the readings). The test needs a window of 2 s or more to be quiet: with 1.0 s the slope noise (0.38 g/s) is as large as a 0.5 g/s limit.</dd>
+    <dt>Minimum wait</dt><dd>1 s or more, no upper limit (default 1.0). Never shorter than this.</dd>
+    <dt>Min wait &lt; layer · Layer · Min wait ≥ layer</dt><dd>Row 2 of the settings. <b>Min wait &lt; layer</b> (1 s or more) is used on the layers before <b>Layer</b> N (numbered as in the slicer), <b>Min wait ≥ layer</b> (1 s or more) from layer N to the end of the print. With Layer 0 the second one applies to the whole print and the first is greyed out. Saved in <code>sglog/WAIT2</code>; not part of the Settings snapshots. Needs the library of the 2026-11-01 update (power cycle).</dd>
+    <dt>Also on bottom layers</dt><dd>On by default. Off: bottom layers keep the slicer wait. The number of bottom layers is read from the print file.</dd>
+    <dt>Ignore the slicer wait after retract</dt><dd>While the dynamic wait is on, the slicer's wait is not used on any layer where the dynamic wait is active: the wait lasts until the resin has settled, even when the slicer's value is shorter. It ends after 10 min at the latest if the force never settles. Switching it off during a wait puts the slicer value back at once.</dd>
+  </dl>
+  <p>Without “ignore”, the slicer's wait is the <b>maximum</b>: the wait is only ever shortened. Set a long wait in the slicer and let the dynamic wait end it. The chart shows the wait used on the last 30 layers (settled, maximum, slicer wait, heated), with the last wait tagged, and four tiles: average of the last 30, shortest and longest settled wait with their layers, and how many reached the maximum. <b>Apply</b> does not close the card; only the × does.</p>
+</section>
+
+<section class="s" id="waitheat">
+  <div class="eyebrow">11 · Print · Resin heating</div>
+  <h2>Wait &amp; heat</h2>
+  <figure class="shot"><img src="manual_img/heating.webp" width="592" height="1003" alt="Resin heating card with the Wait and heat checkbox under Heating during print" loading="lazy"><figcaption>Wait &amp; heat is the checkbox under “Heating during print” (greyed while that is off).</figcaption></figure>
+  <div class="why"><div class="eyebrow">Why it exists</div>
+    <p>During a print the stock firmware heats only while the vat tilts. With long waits the vat cools between pulses. Heating during the wait, when nothing else happens, holds the temperature without heating during the exposure.</p>
+  </div>
+  <ul>
+    <li><b>With the dynamic wait</b>: heats from the start of the wait if the previous wait was 3 s or longer. When the resin has settled the heater goes off and the exposure starts 1.15 s later.</li>
+    <li><b>With the slicer wait</b> (dynamic wait off, or bottom layers without it): heats when the wait is longer than 3 s, until 1.2 s before it ends.</li>
+    <li>The heater and the UV are never on at the same time. Print temperature and the heater's own safety limits apply.</li>
+  </ul>
+</section>
+
+<section class="s" id="gaugesync">
+  <div class="eyebrow">12 · Print · Force card</div>
+  <h2>Gauge sync</h2>
+  <figure class="shot"><img src="manual_img/gaugesync.webp" width="592" height="414" alt="Gauge sync card with the sync switch, the find the best offset automatically switch, phase offset, gauge poll and cost tiles, Search again and Apply buttons" loading="lazy"><figcaption>The Gauge sync card: sync on, automatic search on, offset 74 ms. The search is paused while Dynamic lift is on.</figcaption></figure>
+  <div class="why"><div class="eyebrow">Why it exists</div>
+    <p>The app reads the force gauge every 196.7 ms, while a peel pulse is only about 0.27 s wide. The logged peel peak therefore depends on where the readings fall (up to about ±12 %), and with a constant layer period the error beats about every 2.5 minutes. Syncing the release to the gauge makes every layer be read at the same instants, so the logged peaks are comparable from layer to layer.</p>
+  </div>
+  <p>With the sync on, the release of every layer starts a fixed time after a gauge request. It adds 0 to 197 ms before a release (about 0.1 s per layer); only the release is delayed, not the start-up moves.</p>
+  <dl class="kv">
+    <dt>Sync the release to the gauge reading</dt><dd>On by default.</dd>
+    <dt>Find the best offset automatically</dt><dd>From release 3 of a job, 17 releases: one trial offset (poll interval ÷ 8 apart) on every second layer, reference layers in between. The offset with the highest logged peak relative to its neighbours is kept if it wins by more than 3 %. <b>Search again</b> repeats it.</dd>
+    <dt>Phase offset</dt><dd>The offset in ms; editable only when the automatic search is off.</dd>
+    <dt>Search paused</dt><dd>While Dynamic lift is on the search does not run (Dynamic lift changes the start speed from layer to layer, which the comparison cannot tolerate): the offset stays as it is, and the search runs again, once per job, when Dynamic lift is off.</dd>
+  </dl>
+  <div class="note">The logged peak is still below the true one, but by the same amount on every layer.</div>
+</section>
+
+<section class="s" id="tilt">
+  <div class="eyebrow">13 · Print</div>
+  <h2>Tilt speed</h2>
+  <figure class="shot"><img src="manual_img/tilt.webp" width="592" height="911" alt="Tilt speed card with the Custom speeds switch, N 50 and four dials: release and return before and after layer N, each with stage 1 and stage 2 speeds and a stage angle" loading="lazy"><figcaption>The Tilt speed card: Custom speeds on, N 50, four dials with the stage speeds and stage angles.</figcaption></figure>
+  <div class="why"><div class="eyebrow">Why it exists</div>
+    <p>The stock firmware has two-stage tilt settings but they do not work: it sends stage 2 only 3 ms after stage 1, and the tilt motor chip adds stage 2's distance to where the motor still is, not to where stage 1 will end. The release stopped near 80° instead of 140°, and the return overshot zero by about 60°. That is why stock machine files keep the stage angles at 0. The mod fixes this, so the peel speed can finally be shaped.</p>
+    <p>The fix gives the chip the final position at once and only changes the speed when the motor passes the stage angle. The position can never be wrong; at worst the rest of the move runs at stage 1's speed. Tested: two speeds in both directions, every move ending exactly at 0° and 140°.</p>
+  </div>
+  <p>The Saturn 4 Ultra peels by tilting the vat. Each move runs in one or two stages: stage 1 at one speed up to a <b>stage angle</b>, stage 2 at another speed for the rest. The card shows four dials: release (0° → 140°) and return (140° → 0°), each for the first N layers and for the layers after.</p>
+  <dl class="kv">
+    <dt>N</dt><dd>The layer where the profile switches from the first block (blue tint) to the second (orange tint).</dd>
+    <dt><span class="chip c-green">green</span></dt><dd>Stage 1 speed, °/s.</dd>
+    <dt><span class="chip c-blue">blue</span></dt><dd>Stage 2 speed, °/s.</dd>
+    <dt><span class="chip c-white">white</span></dt><dd>Stage angle. “off” = one stage at one speed (release uses the blue speed, return the green one). While Dynamic lift is on the release angle shows <b>auto</b>.</dd>
+  </dl>
+  <p>Steps of 2. Speeds 10–144 °/s, angles 10–120° or off. The angles are those of the tilting motor, not of the vat itself, which follows the motor through an eccentric (140° of the motor are about 3° of the vat).</p>
+  <div class="note"><b>Advice:</b> keep the stage angle at <b>60° or more</b>. Smaller angles are possible but not recommended; the card shows this note and does not limit the values.</div>
+  <ul>
+    <li><b>Custom speeds</b> (switch at the top): ON = the printer uses the values set in this card; OFF = the stock speeds are used, the values stay stored. While Dynamic lift is on, the card's values are used whatever the switch says.</li>
+    <li><b>Apply</b> sends the values. When idle they apply at once; during a print they go in at the next wait after retract, when the vat is still. They are saved in the printer's machine settings. <b>Stock values</b> fills the dials with the factory profile (N 50; 36 °/s before, 72 °/s after; one stage), <b>Reload</b> reads the printer's values again.</li>
+    <li>The two-stage fix is always on. It does nothing when no stage angle is set and no feature uses it; stage angles, the gauge sync and Dynamic lift rely on it.</li>
+  </ul>
+</section>
+
+<section class="s" id="dynlift">
+  <div class="eyebrow">14 · Print · Force card</div>
+  <h2>Dynamic lift</h2>
+  <figure class="shot"><img src="manual_img/dynlift.webp" width="592" height="816" alt="Dynamic lift card switched off with the peel peak graph of the last eight layers, the limit and lower level lines and the text under the graph" loading="lazy"><figcaption>The Dynamic lift card, fully expanded and switched off: the graph still shows the peel peaks (example data); limit 2000 g, lower level 1500 g, steps 20 % and 5 %, start at layer 1.</figcaption></figure>
+  <div class="why"><div class="eyebrow">Why it exists</div>
+    <p>A slow peel is gentle but the whole layer is slow; a fast peel saves time but can overload a layer. The force peak happens at the moment the layer separates from the film, and after it the rest of the release does not need to be gentle. Dynamic lift starts the release at a speed that keeps the peak inside a limit, layer by layer, and goes fast once the layer has separated, so most of the time is saved without raising the peak.</p>
+  </div>
+  <p>Off by default. While it is on, the release angles of the dials show <b>auto</b>: the manual release stage angles are ignored. The return is not touched.</p>
+  <p><b>The graph works with the function off.</b> During a print the card only <i>watches</i> every release that Dynamic lift is not acting on (function off, layers before its start layer, slow layers) and shows its peel peak, so the peaks of a normal print can be compared with a print that uses Dynamic lift. Nothing is changed: no speed, no controller; the CSV columns <code>dl_peak_g</code>, <code>sep_deg</code> and <code>sep_kind</code> are filled as well. With the function off the text under the graph says “separation seen at X°”, “no peel seen” or “separation not seen”.</p>
+  <dl class="kv">
+    <dt>Start speed</dt><dd>The release stage 1 speed set in the dials, times a factor the controller adjusts layer by layer. Never above the set speed, never below 10 °/s.</dd>
+    <dt>Speed-up</dt><dd>When the gauge has seen a negative peak of at least 100 g and then two readings that each rise, the rest of the release runs at the stage 2 speed of the dials. If the force stays below 100 g after 20° of tilt there is no peel: the fast speed starts at once. The stage 2 speed must be above the start speed.</dd>
+    <dt>Peak force limit · Lower level</dt><dd>Defaults 2000 g and 1500 g. After each layer: if its peak is above the limit the start speed is lowered by the slower step, and keeps being lowered until the peak is below the lower level; then it is raised by the faster step while the peak stays below the limit.</dd>
+    <dt>Slower step · Faster step</dt><dd>Defaults 20 % and 5 %.</dd>
+    <dt>Start at layer</dt><dd>The first layer (1 = from the first layer, as numbered in the slicer and in the Slow layers lists) from which Dynamic lift acts. Before it the set speeds of the Tilt speed card are used unchanged. The box appears when the printer's library knows it.</dd>
+    <dt>Reset speed</dt><dd>Start speed back to the set speed. It also starts at the set speed whenever a new print begins.</dd>
+  </dl>
+  <div class="note">All layers are included, also the bottom layers. Layers of a slow-layer list keep the slow set. The peak is the logged peak (the gauge reads every 0.2 s, so the true peak is higher by about 18 % on average). The switch to the fast speed follows the tilt's acceleration setting (<code>I6 C/D</code>, 36°/s² on this printer): a large speed jump takes about a second. Dynamic lift works while job logging is off and is part of the Settings snapshot.</div>
+</section>
+
+<section class="s" id="slow">
+  <div class="eyebrow">15 · Print · Files card + Tilt speed card</div>
+  <h2>Slow layers</h2>
+  <figure class="shot"><img src="manual_img/slowset.webp" width="592" height="393" alt="Slow layers card with two purple dials for release and return at 18 degrees per second, angles off, Reload and Apply slow set buttons" loading="lazy"><figcaption>The Slow layers card (opened from the Tilt speed card): one stage at 18 °/s in both directions.</figcaption></figure>
+  <div class="why"><div class="eyebrow">Why it exists</div>
+    <p>Some prints have a few delicate layers: an overhang, a thin bridge, a large flat section. A slow peel there avoids failures, but slowing the whole print costs hours. Listing those layers keeps the rest of the print fast. The slow values are never saved to the printer's machine settings, so a crash or reboot cannot leave the printer slow.</p>
+  </div>
+  <p>The printer tilts with the normal profile. For the layers you list it uses one fixed <b>slow set</b> instead. The list belongs to one print file; the slow set is the same for every file.</p>
+  <h3>The slow set</h3>
+  <p>Two dials, release and return. Default: one stage at 18 °/s both ways. “+” on the angle makes a direction two-stage. <b>Apply slow set</b> saves it.</p>
+  <figure class="shot"><img src="manual_img/slowlist.webp" width="592" height="567" alt="Slow layer list panel for one print file with the example text, chips for the ranges and a check line with the layer count" loading="lazy"><figcaption>The Slow layer list panel of one print file (opened from the Files card), with the layer chips and the check line.</figcaption></figure>
+  <h3>The layer list</h3>
+  <p>Open it with the <b>Slow layers</b> button under a file (local files only). Type the layers or upload a <code>.txt</code>, then <b>Save</b>. The button then shows the count, for example “Slow layers · 28”. Layers are numbered from 1, as in Chitubox.</p>
+<pre># overhang under the arch
+20-35
+120
+200-210, 240</pre>
+  <ul>
+    <li>Single layers (<code>120</code>) or ranges (<code>20-35</code>, both ends included), one per line or separated by commas or spaces; <code>#</code> starts a comment. Overlapping ranges are merged. A reversed range or anything that is not a number rejects the whole list.</li>
+    <li>The list is stored as <code>sglog/layertilt/&lt;file name&gt;.txt</code> and read again at every layer, so a change during a print applies from the next layer.</li>
+  </ul>
+  <h3>During a print</h3>
+  <p>At the start of the wait before a listed layer the slow set is written into both profile blocks, so that layer releases and returns slowly. At the first unlisted layer the normal profile comes back; it also comes back when the print stops or ends. A purple strip on the Tilt speed card shows “Slow layer · layer 127 of 267” and the next slow layer. The Features switch <b>Slow layers</b> ignores all lists when off. <b>Beep before slow layers</b> makes the buzzer double-beep once per slow range, 2 layers before its first layer, at the start of that layer's wait; it works with the printer's own beep switch off.</p>
+</section>
+
+<section class="s" id="files">
+  <div class="eyebrow">16 · Dashboard</div>
+  <h2>Files</h2>
+  <figure class="shot"><img src="manual_img/files.webp" width="592" height="617" alt="Files card listing print files with thumbnails, size, date, Slow layers and Profile tags, and Print, Download and Delete icons" loading="lazy"><figcaption>The Files card: each file with its Slow layers button and profile tag, and the Print, Download and Delete icons.</figcaption></figure>
+  <div class="why"><div class="eyebrow">Why it exists</div>
+    <p>To manage and start prints without the slicer or the touch screen, with a safety checklist before every start and, from the Start print dialog, the settings that suit the file.</p>
+  </div>
+  <ul>
+    <li>Lists the <code>.ctb</code> and <code>.goo</code> files on the printer and on a USB stick, newest first, with thumbnail, size and date. Under a name: the <b>Slow layers</b> button (section 15) and the <b>Profile · name</b> tag (section 17).</li>
+    <li><b>Download</b> and <b>Delete</b> (with confirmation; the file being printed cannot be deleted).</li>
+    <li><b>Upload</b> sends a file straight to the printer in 1 MB parts, like the slicer does. The printer checks the whole file's checksum before keeping it.</li>
+    <li><b>Job history</b> opens the job logs (section 19).</li>
+  </ul>
+  <figure class="shot"><img src="manual_img/startprint.webp" width="436" height="949" alt="Start print dialog with the thumbnail, three reminders, a Settings profile list with the profile used last time selected, the list of settings that would change, a Remember this profile for this file checkbox and Cancel and Apply profile and start print buttons" loading="lazy"><figcaption>The Start print dialog with a settings profile selected: it lists what changes and can remember the profile for this file.</figcaption></figure>
+  <h3>Start print</h3>
+  <p><b>Print</b> (when idle) asks you to confirm three checks: resin in the vat, build plate clean and tight, vat and film intact with the lid closed. With profiles saved (section 17) the dialog also has a <b>Settings profile</b> list: “Keep the settings as they are now” or one of the profiles; the one used last time for this file is preselected. The dialog lists the settings that would change. <b>Remember this profile for this file</b> keeps the choice. The profile is applied right before the print starts; if it cannot be applied the print does not start. If Pre-heat and Plate into the resin are on, the plate rises to 50 mm first (section 7), and the dialog says so.</p>
+</section>
+
+<section class="s" id="settings">
+  <div class="eyebrow">17 · Dashboard</div>
+  <h2>Settings and profiles</h2>
+  <figure class="shot"><img src="manual_img/settings.webp" width="592" height="972" alt="Settings card with three profiles Standard, Fast prints and Gentle peel, overwrite and delete icons on each row, the values of the selected profile and the buttons Save as, Restore selected and Restore defaults" loading="lazy"><figcaption>The Settings card with three profiles (the two named ones are sample profiles for this picture).</figcaption></figure>
+  <div class="why"><div class="eyebrow">Why it exists</div>
+    <p>Different prints need different settings: a fast profile for sturdy models, a gentle one for delicate ones. Profiles let you save a whole set of the mod's settings under a name, return to a known-good set in one step, and let a print file start with the settings that suit it.</p>
+  </div>
+  <p>The card is collapsed by default (<b>Show</b>). The first row, <b>Standard</b>, is the single saved snapshot of earlier builds; it cannot be deleted. Every button asks first and shows exactly what it will set.</p>
+  <dl class="kv">
+    <dt>Save as…</dt><dd>Asks for a name (1–32 letters, digits, space, - _ . ; “Standard” is taken; Enter saves) and stores the settings the printer has now. A name that exists asks before it is replaced.</dd>
+    <dt>Select a row</dt><dd>Click a row to select it. The values below the list are those of the selected profile.</dd>
+    <dt>Restore selected</dt><dd>Puts the selected profile's settings on the printer. The force calibration (k) and “pre-heat on now” are not changed.</dd>
+    <dt>Overwrite / delete icons</dt><dd>Overwrite a profile with the current settings; delete a profile (the files that used it fall back to “Keep the settings as they are now”).</dd>
+    <dt>Restore defaults</dt><dd>Sets the defaults below. Your profiles are kept.</dd>
+  </dl>
+  <div class="tbl"><table>
+    <thead><tr><th>Included in a profile</th><th>Default</th></tr></thead>
+    <tbody>
+      <tr><td>Dynamic wait, bottom layers, gradient, window, minimum · ignore the slicer wait</td><td>off · bottom on · 1.0 g/s · 1.0 s · 1.0 s · off</td></tr>
+      <tr><td>Wait &amp; heat · Tare in the wait · Auto-tare when idle</td><td>off · off · on</td></tr>
+      <tr><td>Heating: pre-heat temperature · heating during print · print temperature · Plate into the resin</td><td>30 °C · on · 40 °C · off</td></tr>
+      <tr><td>Tilt profile (N and all four dials) · Custom speeds</td><td>stock: N 50, 36 / 72 °/s, one stage · off</td></tr>
+      <tr><td>Slow set · Slow layers · beep before slow layers</td><td>18 °/s both ways · on · off</td></tr>
+      <tr><td>Gauge sync (on, automatic search, offset)</td><td>on · on · 0 ms</td></tr>
+      <tr><td>Dynamic lift (on, limit, lower level, steps)</td><td>off · 2000 g · 1500 g · 20 % · 5 %</td></tr>
+      <tr><td>UI loop sleep (idle · printing) · Job logging</td><td>50 · 200 ms · on</td></tr>
+    </tbody>
+  </table></div>
+  <p>Not included: the force calibration (k), whether pre-heat is on right now, Manual Exposure, the slow-layer lists (they belong to the files), the machine settings file and Flex Plate. Profiles are files on the printer: <code>sglog/profiles/&lt;name&gt;.txt</code>; the link of a print file to its profile is <code>sglog/fileprofile/&lt;file&gt;.txt</code>.</p>
+</section>
+
+<section class="s" id="machine">
+  <div class="eyebrow">18 · Dashboard · Settings card</div>
+  <h2>Machine settings file</h2>
+  <figure class="shot"><img src="manual_img/machine.webp" width="592" height="254" alt="Machine settings card with a Choose gcode upload button, Download current and a Backups list" loading="lazy"><figcaption>The Machine settings card: upload a machine gcode, preview, apply, and the list of backups.</figcaption></figure>
+  <div class="why"><div class="eyebrow">Why it exists</div>
+    <p>The printer keeps its machine parameters (currents, speeds, thresholds) in a saved file that can normally only be changed by a gcode file from a USB stick or by hidden menus. Changing them from the browser, with a preview and a backup, makes tuning safe and quick.</p>
+  </div>
+  <p>Settings card → <b>Machine settings…</b>: upload a machine <code>.gcode</code> (lines like <code>M5000 I6 A0</code>), see which values differ from the printer's, tick the rows, and apply. Values go in live where possible and into the saved file with its checksum; a backup of the file is made first (the last 10 are kept in <code>sglog/machine_backups</code>, each can be restored). A boot guard puts the last good backup back if the saved file is ever invalid. <b>Download current</b> saves the printer's present values as a gcode.</p>
+</section>
+
+<section class="s" id="logs">
+  <div class="eyebrow">19 · Data</div>
+  <h2>Job history and logs</h2>
+  <figure class="shot"><img src="manual_img/history.webp" width="592" height="569" alt="Print job history card with thumbnails, tick boxes, file names, dates, size and layer counts and CSV download buttons" loading="lazy"><figcaption>The Print job history card: one log per print, with thumbnail, date, size and layers.</figcaption></figure>
+  <div class="why"><div class="eyebrow">Why it exists</div>
+    <p>The logs are the evidence behind every setting in this manual: they showed the settling times, the peel forces per layer and the tilt bug, and they let you compare prints after a change.</p>
+  </div>
+  <p>Every print gets a log in <code>/media/mmcblk0p2/sglog/</code>: a <code>.csv</code> with one row every 0.5 s and a <code>.txt</code> header (print file, zero, k). The card (Files card → <b>Job history</b>) lists them with thumbnail, layers and duration; tick several to download or delete them at once (never the running job). The oldest logs are deleted when all logs together pass 200 MB; one log stops growing at 50 MB.</p>
+  <p>CSV columns: <code>time_utc, t_s, layer, phase, raw_last, value, value_min, value_max, n, raw_min, raw_max, g, g_min, g_max, tank_c, wait_s, wait_end, heat_w, cpu</code>, then the tilt columns <code>rel_v1, rel_v2, sep_deg, sep_kind, ret_v1, ret_v2, dl_peak_g, dl_f</code> (release and return speeds used, separation angle, peel peak and Dynamic lift factor; filled also with Dynamic lift off), the exposure columns <code>expo_file, expo_set, expo_used</code> and the Z columns <code>z_ret_mm, z_step_um</code> (the print height after the retract and its step from the layer before, section 24). Each row holds the last, minimum and maximum of its 0.5 s window; <code>wait_end</code> is settled, max or off; <code>heat_w</code> says whether the wait was heated.</p>
+  <p><b>Levelling log.</b> Independent of the job logs, the printer appends one line per print job to <code>/media/mmcblk0p2/sglog/LEVELS.csv</code> at the job's first layer: <code>time_utc, print_file, zero_machine, zero_axis, z_first, z_target</code>. <code>zero_machine</code> is the Z zero (floor contact) that the auto-leveling of this job found; comparing it over many prints shows how repeatable the leveling is (all values in mm). <code>zero_axis</code> is the Z axis's own copy, which is only refreshed at a restart; <code>z_first</code> is the plate position at layer 1 and <code>z_target</code> the position the file asks for (zero + first layer height). The file is never deleted by the job history.</p>
+  <p>For detailed analysis a raw capture of every sensor message can be switched on by creating <code>/media/mmcblk0p2/sgcap/ENABLE</code> (checked every second, also mid-print); delete it to stop.</p>
+</section>
+
+<section class="s" id="developer">
+  <div class="eyebrow">20 · Test tools · Developer card</div>
+  <h2>Developer card</h2>
+  <figure class="shot"><img src="manual_img/developer.webp" width="592" height="221" alt="Developer card with two rows: Tilt Move with a Tilt Move button and Z monitor with a Z monitor button" loading="lazy"><figcaption>The Developer card: the test and diagnostic tools that are not needed in daily use.</figcaption></figure>
+  <div class="why"><div class="eyebrow">Why it exists</div>
+    <p>Tilt Move and the Z monitor are tools for checking and testing the printer, not for printing. They used to be buttons in the Status card; a card of their own keeps the Status card short.</p>
+  </div>
+  <p>The card has one row per tool and a button that opens its card: <b>Tilt Move…</b> (the next section) and <b>Z monitor…</b> (section 24). A button is only there when the printer's library supports the tool.</p>
+  <p>The third row is the <b>Job logging</b> switch (a CSV file per print, shown in the Job history card). It used to be in the Features list.</p>
+</section>
+
+<section class="s" id="tiltmove">
+  <div class="eyebrow">21 · Test tool · Developer card</div>
+  <h2>Tilt Move</h2>
+  <figure class="shot"><img src="manual_img/tiltmove.webp" width="592" height="394" alt="Tilt Move card with the tilt position, the 0 degree, Custom and 140 degree presets, a custom value with minus and plus, a Move button and the warning about the build plate" loading="lazy"><figcaption>The Tilt Move card: preset 0° and 140°, a custom angle with − and +, printer idle only.</figcaption></figure>
+  <div class="why"><div class="eyebrow">Why it exists</div>
+    <p>To test a tilt setting, look at the vat or check the tilt axis without starting a print or opening a menu: the vat can be tilted from the browser, to any angle from 0° to 140°.</p>
+  </div>
+  <p>Developer card → <b>Tilt Move…</b> opens the card. It shows the position (the app's own tracked tilt, 0° = vat flat, 140° = fully tilted) and three targets: <b>0°</b> and <b>140°</b> move at once; <b>Custom</b> takes a typed angle and <b>Move</b>, or <b>−</b> / <b>+</b>, which move the motor at once by 2° per press. The speed is fixed at 36 °/s. It works only while the printer is idle (no print job, tilt axis homed); otherwise the card is greyed out and says why. Check first that the build plate is clear of the vat and the resin: the vat tilts under it. Nothing is saved.</p>
+</section>
+
+<section class="s" id="exposure">
+  <div class="eyebrow">22 · Print · Features list</div>
+  <h2>Manual Exposure</h2>
+  <figure class="shot"><img src="manual_img/exposure.webp" width="592" height="564" alt="Manual Exposure card with no print running: the READY pill, a banner saying the normal layer time of 2.80 seconds is set for the next print job, the bottom and normal layer fields and the Apply and Revert to file buttons" loading="lazy"><figcaption>The Manual Exposure card with no print running: a normal-layer time of 2.8 s is set and waits for the next job (example).</figcaption></figure>
+  <div class="why"><div class="eyebrow">Why it exists</div>
+    <p>Exposure time is fixed in the print file, so a test print that comes out too soft or too hard has to be re-sliced. With this card you read what the file planned and what the printer actually used for each layer, and change the time of the following layers while the print runs.</p>
+  </div>
+  <p>The Features list row <b>Manual Exposure</b> (its name) opens the card. <b>The times can be set with or without a print job.</b> With no job the card says <b>READY</b>: the times you apply are kept and used from the first layer of the next job, and end with that job. During a print it shows the file's planned exposure and the time used per layer (a chart), three tiles (bottom, transition, normal) and two fields, <b>Bottom layers</b> and <b>Normal layers</b>, 0–60 s in steps of 0.1 s. <b>Apply</b> sets them from the next layer; the layer that is exposing now keeps its time. Transition layers are graded between your bottom and normal times. <b>Revert to file</b> goes back. The setting ends with the job and is never saved.</p>
+  <p>The Features list has a <b>Manual Exposure</b> switch: on = the times set with Apply are in force, off = back to the file's times; switching on again re-applies the last Apply of this job. Manual Exposure and Multi Exposure exclude each other: while one is on the other is switched off first. With no job the file's own times are not known yet, so the fields start empty. Tested by a write on a real print (4.5 s to 5.0 s); transition layers and a 0 s exposure are not tested yet.</p>
+</section>
+
+<section class="s" id="multiexp">
+  <div class="eyebrow">23 · Print · Features list</div>
+  <h2>Multi Exposure</h2>
+  <figure class="shot"><img src="manual_img/multiexp.webp" width="592" height="1193" alt="Multi Exposure card switched on with four quadrant boxes in the order of the slicer view, the table of the stages of one layer and the table of the measured UV time seen by each quadrant on the last layers" loading="lazy"><figcaption>The Multi Exposure card with four quadrant times (rear row on top), the stages of one layer and the measured UV times of the last layers.</figcaption></figure>
+  <div class="why"><div class="eyebrow">Why it exists</div>
+    <p>To find the right exposure time for a resin you normally print the same part several times with different times. Multi Exposure does it in one print: the build plate is split into four quadrants and each quadrant gets its own UV time on every normal layer. A test print with four identical bodies, one in each quadrant, shows four exposure times side by side.</p>
+  </div>
+  <p>Switch it on with the switch of the card (or the Features row) before or during a print. The four boxes are drawn like the build plate in your slicer; <b>−</b> and <b>+</b> change a time by 0.1 s, or type a value. The quadrants are numbered as the screen image reaches the display board: <b>1</b> front right, <b>2</b> front left, <b>3</b> rear right, <b>4</b> rear left (seen from the front of the printer; measured in a dry run). Place the bodies of your test in the slicer at those positions. The split is at the screen centre: a body must lie completely inside its quadrant.</p>
+  <p><b>Start at layer</b> (box above the quadrant times, 1 = from the first normal layer): normal layers before it keep the time of the file, from that layer on the four times apply. Saved in <code>sglog/MXFROM</code>. The bar <b>Stages and last layers</b> below the quadrants hides or shows the two tables. The card shows only the On / Off switch (no status text).</p>
+  <dl class="kv">
+    <dt>Per layer: stages</dt><dd>The times are sorted; equal times share a stage. A layer is exposed in stages: all quadrants that still need UV are lit, and after each stage the finished quadrants are switched dark. A quadrant with nothing on that layer is skipped.</dd>
+    <dt>The swap</dt><dd>Between two stages the UV is off for about half a second while the screen image is swapped; that time gives no dose. The layer takes the longest time plus these swaps.</dd>
+    <dt>Last layers</dt><dd>The UV-on time that each quadrant really got, measured per layer. In the dry run the times 2, 4, 6 and 8 s were reproduced to a few milliseconds.</dd>
+  </dl>
+  <div class="note"><b>Rules.</b> Only <b>normal</b> layers are changed; bottom and transition layers keep the time of the file. The switch ends with the job (3 s after the print log ends) and is never saved; the four times are. Pause finishes the layer, then pauses; stop or any error switches the UV off and everything back to the file's time. It cannot be on together with Manual Exposure. It needs the board-link code of the printer's library (in every build from 45 on).</div>
+</section>
+
+<section class="s" id="zmonitor">
+  <div class="eyebrow">24 · Print · Developer card</div>
+  <h2>Z monitor</h2>
+  <figure class="shot"><img src="manual_img/zmonitor.webp" width="592" height="615" alt="Z monitor card with the title Layer 14 and height 0.799 millimetres, a bar graph of the Z step of the last 14 layers with dotted lines at the layer heights 100 and 50 micrometres, and three tiles" loading="lazy"><figcaption>The Z monitor card (example data): the first two layers are 0.1 mm, the rest 0.05 mm.</figcaption></figure>
+  <div class="why"><div class="eyebrow">Why it exists</div>
+    <p>It is meant to verify the layer heights of prints with a <b>dynamic (variable) layer height</b>. Some slicers make thin layers where the detail is fine and thick layers where it is not, so the plate has to rise by a different amount on almost every layer, and a wrong step would silently change the shape of the part. The Z monitor shows, for every layer, where the plate stood when the retract was finished and compares each step with the layer height that the file asks for, so you can check that the part is built with the heights the slicer planned. It also shows whether the first layer started where it should.</p>
+  </div>
+  <p>Developer card → <b>Z monitor…</b>. Once per layer, at the start of the exposure (the retract is done and the plate stands still), the printer's Z position is read and shown as the <b>print height</b>: the plate position minus the Z zero (the floor contact found by the auto-leveling), so it is about the layer height after the first layer, not the machine coordinate. When no print runs the card shows the plate's machine position.</p>
+  <dl class="kv">
+    <dt>Bars</dt><dd>The Z step from the previous layer in µm (layer 1: its height above the floor contact). The number under a bar is the print height in mm, below it the layer number.</dd>
+    <dt>Dotted lines</dt><dd>The layer height of the file, one line for each height in the graph, read from the printer's own layer data (a file with thicker bottom layers or a variable layer height has one line for each height in the graph). Bars of layers thicker than the thinnest are yellow, the thinnest green.</dd>
+    <dt>Tiles</dt><dd>The print height after the last retract · the last step with the file's height · the largest difference between a measured step and the file's step in this job. A reading of about 0.6 µm is the resolution of the counter.</dd>
+  </dl>
+  <div class="note">The value is the printer's own step counter (steps × 1/1600 mm), not a measurement: it shows what the printer believes. It would reveal a wrong target or a changed layer height, but not a step the motor lost without the printer noticing. The same values go to the job log as <code>z_ret_mm</code> and <code>z_step_um</code>.</div>
+</section>
+
+<section class="s" id="flex">
+  <div class="eyebrow">25 · Printer set-up · Settings card</div>
+  <h2>Flex Plate</h2>
+  <figure class="shot"><img src="manual_img/flex.webp" width="592" height="1458" alt="Flex Plate card with the thickness compensation switch, a table with the factory values, the values plus 3 millimetres and the values the printer holds now, notes on the volume compensation and the pill showing ON" loading="lazy"><figcaption>The Flex Plate card with the table: factory values (OFF), factory + 3.0 mm (ON) and what the printer holds now.</figcaption></figure>
+  <div class="why"><div class="eyebrow">Why it exists</div>
+    <p>A flex build plate is about 3 mm thicker than the standard plate, so the plate face reaches the film 3 mm higher in the printer's own Z numbers. Every Z position that is measured from the film (zero, leveling, resin detection, vat heating) and the resin volume estimate have to move with it. Changing eleven values by hand when you swap plates is error-prone; the switch writes the whole set at once.</p>
+  </div>
+  <p>Settings card → <b>Show</b> → <b>Flex Plate…</b> opens the card (it is used seldom, so it is not on the Status card); the pill in the Status card shows <b>FLEX PLATE OFF</b> (all values factory), <b>ON</b> (factory + 3.0 mm) or <b>CUSTOM</b> (any other values, for example hand-tuned ones). Only Z positions and the resin volume compensation change; no speed does.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Parameter</th><th>OFF · factory</th><th>ON · +3.0 mm</th></tr></thead>
+    <tbody>
+      <tr><td>Z-axis zero position <code>I0 A0 Y</code></td><td>0.0</td><td>3.0</td></tr>
+      <tr><td>Auto-leveling start / end <code>I205 A / B</code></td><td>3.0 / −3.0</td><td>6.0 / 0.0</td></tr>
+      <tr><td>Resin detection start / end <code>I204 A / B</code></td><td>45.0 / 3.0</td><td>48.0 / 6.0</td></tr>
+      <tr><td>Resin lines low / high <code>I4 Y / X</code></td><td>8 / 32 (the printer's values; the factory table has none)</td><td>11 / 35</td></tr>
+      <tr><td>Vat heating lower / upper <code>I215 Z / E</code></td><td>5.0 / 18.0</td><td>8.0 / 21.0</td></tr>
+      <tr><td>Volume compensation <code>I204 R</code></td><td>100.0 ml</td><td>204.7 ml</td></tr>
+      <tr><td>Pre-heat plate position (dashboard)</td><td>3.0 mm</td><td>6.0 mm</td></tr>
+    </tbody>
+  </table></div>
+  <p>The volume compensation is subtracted from the printer's resin estimate (143 × 244 mm × the plate position at the resin surface ÷ 1000). With the thicker plate that position is 3 mm higher, so the estimate is 104.7 ml too high; 104.7 ml more compensation takes it back, and the “enough resin?” check gives the same answer as on a standard printer.</p>
+  <div class="note"><b>Why the Z zero in “Printer now” differs.</b> After every auto-leveling the printer replaces the Z zero position (<code>I0 A0 Y</code>) with the floor contact it has just measured, so “Printer now” usually shows another value than the 0.0 / 3.0 mm of the table (for example 3.3 mm). This is normal. The dashboard does not use the Z zero to decide between OFF, ON and CUSTOM: only the other values of the table decide.</div>
+  <div class="note"><b>Safety.</b> Turning the switch on or off asks twice: first a dialog with two tick boxes (the right plate is mounted, the printer is idle), then a <b>Final confirmation</b> listing every value now → new; cancelling there writes nothing. A backup of the machine settings file is made first (Machine settings → Backups). It works only while the printer is idle and the plate is not moving, and takes effect at once, including the Z axis lower limit. <b>OFF with the flex plate still mounted</b> makes the printer think the floor is 3 mm lower than it is: the plate can be pressed into the screen. The first switch-on replaces hand-tuned values.</div>
+</section>
+
+<section class="s" id="wide">
+  <div class="eyebrow">26 · Dashboard layout</div>
+  <h2>Wide layout</h2>
+  <figure class="shot"><img src="manual_img/wide.webp" width="1920" height="2600" alt="The whole dashboard in a wide window: status and features on the left, the force chart and the opened cards in the middle, the files on the right" loading="lazy"><figcaption>The dashboard in a 1920 px wide window with several cards open.</figcaption></figure>
+  <div class="why"><div class="eyebrow">Why it exists</div>
+    <p>With many cards, a single column means a lot of scrolling. On a wide screen the cards spread over the whole window, so the force chart, the settings you are tuning and the file list are all visible at once.</p>
+  </div>
+  <p>In windows at least 900 px wide the cards are arranged in two zones by themselves (there is no switch). Left zone: Status, Files, Job history and the slow-layer lists. Right zone: the Force chart on top, then all other cards in two columns that are packed like masonry: every card takes the height it needs, and the next card goes into whichever column is shorter at that moment, so a short card never leaves a gap under it. <b>Dynamic wait and Dynamic lift</b> are the first two cards (left and right); a card you open goes right after them, the newest first. Folding or unfolding a card moves the cards below it. In windows narrower than 1200 px the cards stack in one column, Dynamic wait and Dynamic lift first. On a phone the zones become a single column.</p>
+</section>
+
+<section class="s" id="background">
+  <div class="eyebrow">27 · Always on</div>
+  <h2>What runs in the background</h2>
+  <figure class="shot"><img src="manual_img/header.webp" width="594" height="110" alt="Dashboard header with the three connection dots Printer, Force sensor and Controls" loading="lazy"><figcaption>The connection dots of the header show the parts that run all the time.</figcaption></figure>
+  <div class="why"><div class="eyebrow">Why it exists</div>
+    <p>An over-the-air update would replace the modded firmware and the cloud link is not needed for local printing, so both are blocked. The app normally takes its clock from the (blocked) cloud server, which left it at 1970; the clock from the router keeps log times correct.</p>
+  </div>
+  <dl class="kv">
+    <dt>No cloud, no OTA</dt><dd>The Elegoo/Chitu cloud and update servers are blocked by name and by address.</dd>
+    <dt>Clock from the router</dt><dd>The printer takes the router's time (the HTTP Date header of the gateway, no time zone). If the router gives no time, the dashboard sets the clock from the browser once; NTP is a last fallback.</dd>
+    <dt>Force logger</dt><dd>Reads the gauge board and writes the live feed and the job logs.</dd>
+    <dt>Controls helper</dt><dd>Port 8080 (and port 80, which redirects to the page).</dd>
+    <dt>Root telnet</dt><dd>Port 23, the printer's own telnet service, with a root password set by the mod (the public release has a generic one).</dd>
+    <dt>CPU patch</dt><dd>Sleeps added to the app's three busy loops (section 5).</dd>
+  </dl>
+</section>
+
+<section class="s" id="safety">
+  <div class="eyebrow">28 · Safety</div>
+  <h2>Switches and recovery</h2>
+  <figure class="shot"><img src="manual_img/machine.webp" width="592" height="254" alt="Machine settings card with the list of backups of the saved machine settings file" loading="lazy"><figcaption>The Machine settings backups: the saved file is backed up before every change, including Flex Plate.</figcaption></figure>
+  <div class="why"><div class="eyebrow">Why it is built this way</div>
+    <p>The printer is never opened, so a mistake must always be fixable from USB or with a file. The mod only changes the app partition; the boot loader and system partitions stay stock, and every feature checks the exact app version before it acts. On any other app version the features stay off.</p>
+  </div>
+  <p>Every part of the mod can be switched off without reflashing: create the file over telnet, then reboot.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Create this file</th><th>Switches off</th></tr></thead>
+    <tbody>
+      <tr><td><code>/customer/mod/sgtap_disable</code></td><td>The whole mod library: force monitor, heating, dynamic wait, tilt, exposure, machine settings. Stock printer behaviour plus the CPU patch.</td></tr>
+      <tr><td><code>/customer/mod/sgwait_disable</code></td><td>Dynamic wait, Wait &amp; heat, tare in the wait, Settings and profiles</td></tr>
+      <tr><td><code>/customer/mod/sgheat_disable</code></td><td>Heating control from the dashboard</td></tr>
+      <tr><td><code>/customer/mod/sgtilt_disable</code></td><td>Two-stage tilt fix, tilt settings, Dynamic lift, gauge sync, Tilt Move</td></tr>
+      <tr><td><code>/customer/mod/sgexpo_disable</code></td><td>Manual Exposure</td></tr>
+      <tr><td><code>/customer/mod/sgmach_disable</code></td><td>Live machine settings and Flex Plate</td></tr>
+      <tr><td><code>/customer/mod/sguisleep_disable</code></td><td>UI loop sleep setting (the patch's own value applies)</td></tr>
+      <tr><td><code>/customer/mod/machguard_disable</code></td><td>The boot guard of the machine settings file</td></tr>
+      <tr><td><code>/customer/mod/sgwebd_disable</code></td><td>The controls helper on port 8080 (the page becomes read-only)</td></tr>
+      <tr><td><code>/media/mmcblk0p2/sglog/DISABLE</code></td><td>The CSV force logger</td></tr>
+    </tbody>
+  </table></div>
+  <h3>Recovery</h3>
+  <p>While the modded dashboard works, open Settings → Return to stock firmware. The printer checks its internal copy of the original V1.5.9 image, requires the printer to be idle and homed, the resin heating off and no USB stick inserted, then restarts and flashes that image. <b>Never switch the printer off while the update bar is on its screen:</b> the stock image also rewrites the boot loader. The restore asks for the printer password (the telnet root password); Settings → Printer password changes it. Five wrong passwords lock the critical actions for five minutes. It needs no USB stick or internet. This replaces the mod; saved machine settings and print files remain on their own partitions. <b>Manually restart printer after reboot:</b> once the automatic reboot finishes, turn the printer off and back on with its physical power switch. A soft reboot can cause a self-check error. If Flex Plate compensation is on, its Z settings remain after the stock flash: keep the flex plate mounted until those values are reset for a standard plate.</p>
+  <p>If the dashboard cannot run, put a known stock <code>ChituUpgrade.bin</code> on a FAT32 stick and power on; the printer flashes it and restarts. Check the file's md5 on the stick first: the printer does not verify it. A wrong machine setting is undone from Machine settings → Backups.</p>
+</section>
+
+<section class="s" id="reference">
+  <div class="eyebrow">29 · Reference</div>
+  <h2>Settings files on the printer</h2>
+  <figure class="shot"><img src="manual_img/storage.webp" width="592" height="599" alt="Storage list with the partitions used by print files, logs, machine data and the app" loading="lazy"><figcaption>The partition that holds the files below (logs and job CSVs) is the second line of the storage list.</figcaption></figure>
+  <div class="why"><div class="eyebrow">Why it exists</div>
+    <p>Everything the dashboard sets is a small file, so settings survive a reboot and can be inspected or fixed over telnet if the dashboard is not reachable.</p>
+  </div>
+  <p>All in <code>/media/mmcblk0p2/sglog/</code>. The dashboard writes them; they can also be edited over telnet.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>File</th><th>Holds</th></tr></thead>
+    <tbody>
+      <tr><td><code>WAIT</code> · <code>WAITOV</code></td><td>Dynamic wait, Wait &amp; heat, gradient, window, minimum, bottom layers, tare in the wait · ignore the slicer wait</td></tr>
+      <tr><td><code>SETTINGS</code></td><td>The Standard profile of the Settings card</td></tr>
+      <tr><td><code>profiles/</code> · <code>fileprofile/</code></td><td>One file per named settings profile · one file per print file naming its profile</td></tr>
+      <tr><td><code>K</code></td><td>Force calibration (counts per gram)</td></tr>
+      <tr><td><code>AUTOTARE_OFF</code></td><td>Present = auto-tare when idle is off</td></tr>
+      <tr><td><code>TILT2</code></td><td>Optional lead angle for the two-stage fix (the fix itself is always on)</td></tr>
+      <tr><td><code>TILTCUSTOM</code> · <code>TILTOFF</code></td><td>The custom tilt profile · present = custom speeds off (stock applies)</td></tr>
+      <tr><td><code>DYNLIFT</code> · <code>GSYNC</code></td><td>Dynamic lift settings (limit, lower level, steps, start layer) · gauge sync (on, automatic search, offset)</td></tr>
+      <tr><td><code>MULTIEXPO</code></td><td>The four quadrant times and the two mirror flags of Multi Exposure (the ON switch is never saved: it ends with the job)</td></tr>
+      <tr><td><code>LEVELS.csv</code></td><td>One line per print job with the Z zero found by its auto-leveling</td></tr>
+      <tr><td><code>WAIT2</code></td><td>Second minimum wait of the dynamic wait: "MIN2 N"</td></tr>
+      <tr><td><code>MXFROM</code></td><td>Multi Exposure start layer</td></tr>
+      <tr><td><code>SLOWTILT</code> · <code>SLOWBEEP</code> · <code>SLOWOFF</code></td><td>The slow set · beep before slow layers · slow layers off</td></tr>
+      <tr><td><code>layertilt/</code></td><td>One slow-layer list per print file</td></tr>
+      <tr><td><code>PREZ_ON</code></td><td>Present = Plate into the resin</td></tr>
+      <tr><td><code>UISLEEP</code></td><td>UI loop sleep, idle and printing, in ms</td></tr>
+      <tr><td><code>machine_backups/</code></td><td>Backups of the machine settings file: before a Machine settings change, a restore, or a Flex Plate switch (the last 10)</td></tr>
+      <tr><td><code>TILTTRACE</code></td><td>Present = detailed tilt trace (about 100 KB per layer; for tests only)</td></tr>
+      <tr><td><code>calibration.log</code></td><td>Every calibration with its points</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<footer>Saturn 4 Ultra 16K mod · build 45 (mod 8.40, normal line) on stock firmware V1.5.9 · 31 October 2026. The screenshots come from the live dashboard of the printer; the graphs of the Z monitor and Dynamic lift, the armed time of Manual Exposure and the two named profiles in the Settings picture are example data.</footer>
+</main>
+</div>
+
+</body></html>

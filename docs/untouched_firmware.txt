@@ -1,0 +1,39 @@
+WHAT IS UNTOUCHED IN THE FIRMWARE (answer of 2026-10-26)
+=========================================================
+Everything except the `customer` volume is untouched.
+
+NEVER MODIFIED
+- Boot chain: CIS, IPL, IPL_CUST and U-Boot. These are the only parts that would need hardware access to
+  repair if a write went wrong, so tools/pack.py refuses to replace them.
+- Layout and environment: the partition layout and the U-Boot env layout, plus the kernel (its size is
+  hard-coded in `bootcmd`).
+- Other volumes: rootfs, miservice (/config), appconfigs and parameter. They are stock, byte for byte.
+- FPGA: ChituFPGA.bin, the Lattice bitstream the app flashes at start. It is never touched.
+
+WHAT IS CHANGED
+Only the `customer` volume, via the overlay in mods/customer/. It holds the app0.sh hook, libsgtap.so,
+the sgwebd.tcl helper, the dashboard page, and the mod/ files and settings.
+
+ONE EXCEPTION INSIDE IT
+/customer/resources/chitu, the printer app binary, is not byte-stock in the images. tools/patch_cpu.py
+(on by default in build_mod.sh) patches its UI loop, camera scan and UDP poll busy loops so they sleep,
+which lowers the CPU load. Everything else about the app is stock. The library changes its behaviour at
+run time (waits, tilt, exposure) by writing to its memory, but nothing is written back into the binary
+for that.
+
+
+RELATED: CAN EVERYTHING BE ADDED FROM A USB STICK ALONE? (answer of 2026-10-26)
+-------------------------------------------------------------------------------
+No. Almost everything added needs code running on the printer, and the only way found to get code onto it
+is the one-time stick flash.
+- What the flash does: the mods live in the customer volume. A hook in /customer/app0.sh loads
+  libsgtap.so into the printer app at boot and starts root telnet. Stock firmware has no way to run code
+  from a stick (U-Boot only accepts firmware images from one). /customer/autorun.gcode is factory mode
+  only (the project notes line 493).
+- What a stick can do without the flash: the stock gcode import (the M5000 machine-settings file) changes
+  stock parameters (tilt speeds, I6 values, foreign matter limit). It cannot add features like the
+  dynamic wait, Dynamic lift, Exposure times, gauge sync, the datalogger, the dashboard or the profiles.
+- After the flash: everything else goes in over Wi-Fi and telnet, with no stick. A power cycle is needed
+  only when the library changes. Image 32 is flashed and everything since then is live files.
+- Why flash build 35: it makes the live files part of the image, so they survive a reflash and can be
+  recovered from a stick. It is not needed for the features to run.

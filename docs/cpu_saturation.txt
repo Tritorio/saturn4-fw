@@ -1,0 +1,133 @@
+CPU SATURATION — LIVE FOLLOW-UP, 2026-10-20
+============================================
+
+Printer: 192.168.0.44, build 27 (mod 8.17), idle, job.active=0. Measurements
+were read-only over telnet. The earlier stock-image check in the project notes 8.18
+already established that this behaviour exists in unmodified V1.5.9 chitu.
+
+LIVE MEASUREMENT
+- 2 Cortex-A7 cores. BusyBox top -bH over three 3-second samples: 0% idle;
+  roughly 61-64% user, 25-27% system and 10% softirq. Load ~4.3.
+- chitu PID 750 had 56 threads. Three were consistently dominant:
+    TID 750 (main): ~25-34% of total 2-core capacity
+    TID 804:        ~28-39%
+    TID 958:        ~21-34%
+  The remaining threads and services contributed little. BusyBox top's per-thread
+  percentages are shares of all CPU capacity, so ~33% is about 0.66 of one core.
+- /proc/750/task/TID/stat cumulative CPU ticks at uptime ~1h24m:
+    TID 750: user 279216, system 42334
+    TID 804: user 293942, system 34324
+    TID 958: user 45014,  system 283569
+  TID 958 began ~10.8 seconds after the main thread (starttime ticks 1868 vs
+  788; TID 804 was 797). It is the kernel-heavy worker.
+- /proc/750/task/TID/status context switches:
+    TID 750: voluntary 2521, involuntary 1535422
+    TID 804: voluntary 226,  involuntary 1519034
+    TID 958: voluntary 3,    involuntary 1545761
+  All three stayed runnable and were preempted repeatedly. In 500 reads per
+  thread of /proc/.../syscall they all reported "running". That cannot reveal
+  their user-space PCs or exclude short system calls.
+
+CODE AND DEBUGGER FINDINGS
+- chitu at 0x188ac calls 0xbd980 (app UI update), then 0x145e8c
+  (LVGL lv_timer_handler), then branches directly back to 0x188ac. There is
+  no sleep, wait or yield between iterations. This explains the hot main thread.
+- With the printer idle, gdbserver briefly attached to PID 750 three times,
+  sampled the hot threads, and detached each time. TID 804 was sampled in
+  chitu 0xd5468 and adjacent pthread_mutex_lock/unlock code. Function 0xd542c
+  is camera_interface_scan_routine (the thread creation assertion names it).
+  At 0xd5470 it reads camera_flags at 0x303200, and at 0xd547c-0xd5480 it
+  loops back to 0xd5468 while bit 0 is set, with no delay. The live flag was 1,
+  so this is the path it was taking. The routine has a 1-second usleep at
+  0xd5530 for its other path, but that path is bypassed here.
+- TID 958 was sampled repeatedly at libc poll() syscall 0xb4555bf8. Its
+  registers were r1=2 (two descriptors) and r2=0 (zero-millisecond timeout).
+  chitu 0xea414 calls poll at 0xea434 with these exact values and branches
+  from 0xea440 directly back to 0xea428 when poll returns zero. This is the
+  UDP service initialized at 0x8190c with port 0x300c = 12300. The second
+  descriptor is a wakeup pipe. The zero timeout explains the very high system
+  time and almost absent voluntary context switches.
+  Port 12300 is a separate proprietary Chitu binary service: frames start
+  with 0xab, carry a length and two checksum bytes, and dispatch to callbacks.
+  The built-in callback at 0xeb0bc handles 0xe0-family device queries. The
+  live service had no registered device entries (list at object+0x4c empty).
+  Its user-facing purpose is unconfirmed; ordinary SDCP discovery/control
+  uses UDP 3000 and TCP 3030 instead.
+- The UI's CPU meter (sgsys.c) is a two-second /proc/stat delta across both
+  cores, with idle + iowait excluded from busy time. Its ~100% reading agrees
+  with top; it is not a meter calculation error.
+
+CONCLUSION / NEXT STEP
+- This is a stock firmware CPU saturation issue. The present mod is not its
+  cause; disabling libsgtap and reflashing stock were tested earlier.
+- Three concrete fixes to evaluate in a customer-volume-only patch: pace the
+  main UI loop by a few ms; wait or sleep in the camera scan branch where flag
+  bit 0 is set; give UDP poll a short nonzero timeout (the wakeup pipe should
+  retain prompt responses). Measure CPU, UI latency, camera and SDCP/UDP
+  behaviour on a test image before using it for printing.
+- gdbserver detached and exited; chitu remained PID 750 and job.active=0.
+
+TEST IMAGE 28 (2026-10-21)
+- tools/patch_cpu.py patches only the stock V1.5.9 chitu with SHA256
+  e91bd45a4688c3435235214064d36be2c24e02dd6fd56c2532f0ed772333f318.
+  Its new SHA256 is ba4b9db4f984c81b8c00727df076e5694f0fec4108e2a45066ac31fa14268a28.
+- Main UI loop: 5 ms usleep after LVGL handler. Camera scan hot branch: 20 ms
+  usleep. UDP 12300 poll: 20 ms timeout, preserving the pipe wakeup path.
+- Build: CPU_PATCH=1 bash tools/build_mod.sh 28_mod_8.20_cpu. The build now
+  extracts customer from the original UBIFS volume to avoid Windows transfer
+  sidecar files in the copied work tree. Image 28 re-extracted with identical
+  content and metadata (1,002 entries); no Zone.Identifier files. Compared
+  with build 27, the only non-sidecar content changes are BUILD, VERSION and
+  resources/chitu. Customer UBIFS format remains 4 with stock geometry.
+- out/28_mod_8.20_cpu/ChituUpgrade.bin MD5 8b564bad45d9794dc62e33dc618b3335.
+  Copied to D: FAT32 and checked there after Write-VolumeCache. The user
+  flashed it and reported build 28 booted.
+
+LIVE TEST ON BUILD 28
+- Telnet BUILD: 28_mod_8.20_cpu. Installed chitu SHA256 matched the patched
+  binary: ba4b9db4f984c81b8c00727df076e5694f0fec4108e2a45066ac31fa14268a28.
+  Dashboard live.json reported job.active=0, so the measurement was idle.
+- An 8-second /proc/stat and per-thread CPU sample showed 43.3 % total busy
+  across two cores (about 56.7 % idle), compared with 0 % idle before the fix.
+  Main UI TID 750 used 39.7 % of two-core capacity; camera scan TID 803 and
+  UDP 12300 TID 957 each used 0.1 % and were sleeping. Load fell from ~4.3
+  before the fix to ~1.8 after boot. The UI loop remains the main CPU user,
+  but the system is no longer saturated.
+- HTTP :8080 and :3030 responded 200; live.json and /api/ping worked.
+  UDP 3000 and 12300 remained bound. RTSP OPTIONS on :554 returned 200 OK.
+  This checks service availability, not camera streaming or print behaviour.
+
+MOVEMENT-ONLY DRY RUN ON BUILD 28 (user started; no UV/resin exposure)
+- Force_sensor_test.csv job reached at least layer 9, with Z and tilt axis
+  movements in the app log. The job remained active when checked.
+- The most recent 500 CSV rows spanned 249.5 s. Intervals were 0.498-0.502 s,
+  with no gap over 0.55 s and 2-3 gauge readings per row.
+- For completed layers 0-8, the time from "axis 0 is idle" to the app's
+  "printer start exposure" phase marker was 400.009, 89.064, 60.017,
+  30.011, 25.011, 20.017, 15.254, 12.150, 10.010 s. Dashboard wait
+  history reported 400.05, 89.10, 60.06, 30.01, 25.03, 20.03, 15.30,
+  12.19, 10.01 s respectively (all within 0.05 s). The phase marker does
+  not establish that UV was enabled in this movement-only test.
+- Dashboard CPU was ~46-52 % during preparation/layer waits and briefly 68 %
+  during motion; it was not saturated. This is an observed portion of the
+  ongoing dry run, not a complete print or UV-exposure verification.
+- Later in the same active run (layer 37), live.json frame count rose by 51
+  over 9.999 s = 5.1 valid gauge readings/s, matching the board's normal
+  ~197 ms polling interval. CRC-bad remained 0. The latest 500 CSV half-second
+  rows held 1,271 readings (5.094/s over 249.5 s): 229 rows had 2 and 271
+  had 3, with no zero-reading row. CSV preserves last/min/max/count for each
+  0.5 s window; it does not contain every raw sample as a separate row.
+- The user applied a faster two-stage X profile in the wait at layer 61.
+  During the same dry run (checked around layer 84), the tilt trace recorded
+  112 completed stage-two moves: 56 ended at controller XACTUAL 0 steps
+  (0 deg), 56 at -19911 steps (~-140 deg), exactly their XTARGET values.
+  Stage-speed switches occurred near -120 deg. Recent measured steady speeds
+  were ~105.5 and 60.1 deg/s against commands of 112 and 64 deg/s, consistent
+  with the motor controller's previously observed ~6 % speed difference.
+  This proves the controller position counter reached the target, not that an
+  external encoder measured the physical vat angle.
+- Latest check after that analysis: job still active at layer 88, phase settle;
+  dashboard CPU 48.8 %, load 2.13. Tilt counters n2=122, nsw=122, ngive=0,
+  ncancel=0. Current profile N=90; after-N speeds 112/64 deg/s with 20 deg
+  stage angles. Trace is `/media/mmcblk0p2/sglog/tilt_19700101_000040.csv`
+  (clock unsynchronized at boot). No continuous monitor left running.

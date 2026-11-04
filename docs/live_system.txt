@@ -1,0 +1,52 @@
+LIVE SYSTEM SURVEY (step 7.C, 2026-10-15, over telnet as root, read-only commands)
+==================================================================================
+Raw output: build/survey/*.txt (git-ignored). Printer: 192.168.0.44 (Wi-Fi, DHCP).
+
+SYSTEM
+- Linux 4.9.84 armv7l, 2 cores (Cortex-A7), RAM 116 MB (~74 MB available), no swap.
+- Buildroot 2021.11, glibc 2.28. Clock starts at 1970 on every boot (no RTC sync yet).
+- Rootfs (ubi:rootfs) is mounted READ-ONLY (cmdline "ro"); 8.8 MB free.
+  /customer rw, 6.6 MB free. /config rw, 944 KB free. /appconfigs, /parameter almost empty.
+- Only processes of interest: /customer/resources/chitu (PID ~721), telnetd,
+  wpa_supplicant, udhcpc (script /config/default.script), getty on ttyS0.
+
+STORAGE: internal eMMC (7.6 GB, mmcblk0), separate from the NAND (mtd0-12)
+- mmcblk0p1 vfat 511 MB -> /media/mmcblk0p1: machine data + firmware copy
+    ChituUpgrade.bin  md5 2fa5c763... = STOCK V1.5.9 (copy, see below)
+    ChituFPGA.bin     md5 36ac00b6... = stock
+    machine_info.bin (344 KB), machine_param_ref.bin, ui_param_ref.bin, wlan_entry,
+    file_info/, history_image/, opt_log
+    => calibration / machine parameters live HERE, not in the UBI volumes:
+       a firmware reflash does not reset them. Back them up before any app change.
+- mmcblk0p2 exfat 510 MB -> app logs: log -> log1 (current, ~3 MB), log2 (4 MB,
+  rotated). Format "[module][level][line][ms]:msg", modules core/app/ceb-iap/ymodem...
+- mmcblk0p3 exfat 6.3 GB -> print files (.ctb), the printer's "local storage".
+- USB stick: /media/sda1 (app mounts vfat/exfat/ntfs under /media/<dev>).
+
+NETWORK SERVICES
+- TCP 23 telnetd (stock), 554 (RTSP, camera), 3030 (app: Elegoo SDCP websocket/http).
+- UDP 3000 (SDCP discovery), 12300, 41409, 55532, 55533.
+
+U-BOOT ENV (fw_printenv works from Linux; /etc/fw_setenv exists -> NEVER use it
+except for documented variables, a broken env = U-Boot defaults)
+- UpgradeStatus=0, UpgradeDone=0, EMMCUpgradeEnable=0, CurrentVersion=0.0.0,
+  UpgradeImage=ChituUpgrade.bin, usb_folder=images, chitu_factory_mode=2,
+  cbd_board_name=zhinengpai-3dbs009, dispout=SLM40_480x800_ROTATE, bootdelay=1.
+- bootcmd = nand read KERNEL 0x1fc1e0 ; bootm ; fallback RECOVERY copy.
+
+USB RENAME (anti-loop) - explained by the app log
+- "core_handle UpgradeDone" then either
+    "rename /media/sda1/ChituUpgrade.bin -> /media/sda1/ChituUpgrade00.bin"  (OK)
+  or "rename ChituUpgrade.bin fail; USB disk unmount!" (stick not mounted yet).
+- => The rename is a race with the USB mount: usually works, sometimes not.
+  Rule stays: remove the stick after the automatic restart.
+
+OTHER
+- /customer/resources/upgrade_cbd_app_lcd_strain_gauge_1.1.0.bin is sent by the app
+  over ymodem at every boot ("ceb-iap") to a separate MCU board (strain gauge / load
+  cell). Do not touch.
+- INTERNAL UPDATE PATH (static RE confirmed 2026-10-27; actual flash not yet tested):
+  U-Boot runs "sdstar" when env EMMCUpgradeEnable=1, loads ChituUpgrade.bin from
+  mmc 0 and flashes it. The cached eMMC image is byte-identical to the stock
+  V1.5.9 image offered by Elegoo's OTA server (md5 2fa5c763a49e565b963ec0cf87704762).
+  The mod's Return to stock action verifies that copy before arming this path.

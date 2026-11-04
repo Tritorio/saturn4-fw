@@ -1,0 +1,62 @@
+cpu column: n=7244 mean 28.3 max 45.6 %
+releases 210, layers with a peak 209
+switched 185, never switched 25
+switch angle deg: min 10.2 median 21.2 max 84.1
+peak g: min 31 median 1134 max 2624; > 1500 g in 47 layers; > 2000 g in 12
+layer | peak g | start deg/s | switch deg
+  0   2258   36.0  76.4
+  1   1965   28.8  71.7
+  2   1512   23.0  78.5
+  3   1515   18.4  83.3
+  4   1149   14.7  84.1
+  5   2624   15.5  12.9
+  6   2202   12.4  10.9
+  7   1995   10.0  10.2
+  8   1774   10.0  10.5
+  9   1670   10.0  10.3
+ 10   1548   10.0  12.1
+ 11   2128   10.0  17.6
+ 12   2327   10.0  15.6
+ 13   2315   10.0  15.8
+ 14   2344   10.0  15.3
+ 15   2338   10.0  14.0
+ 16   2129   10.0  15.1
+ 17   1956   10.0  14.0
+ 18   1858   10.0  13.0
+ 19   1514   10.0  14.0
+ 20   1462   10.0  13.1
+ 21   1405   10.0  13.1
+ 22   1340   10.0  13.1
+ 23   1282   10.0  13.0
+ 24   1296   10.0  11.2
+ 25   1134   10.0  13.1
+ 26   1124   10.5  11.8
+ 27   1080   11.0  12.3
+ 28   1112   11.6  13.0
+ 29   1136   12.2  13.5
+ 30   1161   12.8  14.2
+ 40   1362   20.8  19.3
+ 50   2526   32.8  30.5
+ 60   1263   18.0  16.8
+ 70   1244   29.3  27.3
+ 80   1690   47.7  35.4
+ 90   1628   60.0  77.9
+100   1384   60.0  66.7
+110   1195   60.0  44.5
+120    542   60.0  44.6
+130    641   60.0  44.6
+140    378   60.0  44.6
+150    376   60.0  -
+160    295   60.0  -
+170    212   60.0  20.1
+180    174   60.0  20.3
+190     94   60.0  20.3
+200     77   60.0  20.1
+
+FINDINGS (first real print with Dynamic lift on, "Body test" 210 layers, 2026-10-23 23:42, stage speeds 36/72 before N=50 and 60/100 after, defaults 2000 g / 1500 g / 20 % / 5 %)
+- All 210 releases went through Dynamic lift (the two-stage path). 185 switched to the fast speed, 25 never switched (layers ~150-160, peaks 300-400 g at a start speed of 60 deg/s: no two rising readings before the end of the stroke; the speed stays 60).
+- Controller: layers 0-4 start 36 -> 28.8 -> 23 -> 18.4 -> 14.7 (peaks 2258 / 1965 / 1512 / 1515 / 1149), then 15.5 (peak 2624) -> reduce -> the 10 deg/s floor from layer 7 to ~25 while the peaks were 1100-2300 g; raised slowly afterwards, back at the set 60 deg/s from layer ~90.
+- The peaks did NOT fall with the speed: 2258 g at 36 deg/s (layer 0), 2327 g at 10 deg/s (layer 12). For these big layers the peel force is set by the area, not by the tilt speed in this range; the floor (10 deg/s) was reached and the peak stayed above the limit.
+- Switch angle: layers 0-4 at 72-84 deg (late separation at 14-36 deg/s), layers 5-30 at the 10 deg/s floor at 10-17 deg, mid-print at 60 deg/s about 44.6 deg (the same every layer: fixed gauge phase), the last layers (peak under 100 g) at 20.1 deg = the 'no peel' rule.
+- The job CSV column 'cpu' works: mean 28 %, max 46 % during the print.
+- The gauge sync auto search ran during this print (Dynamic lift changes the speed from layer to layer) and moved the offset from 74 ms (stable print) to 172 ms: not trustworthy (ratios 0.61-1.06).

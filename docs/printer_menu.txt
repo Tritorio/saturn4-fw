@@ -1,0 +1,41 @@
+PRINTER TOUCH-SCREEN MENU (Saturn 4 Ultra 16K, V1.5.9) - as shown in the user manual
+Source: User Manual/Saturn 4 Ultra 16K-EN-20260903-V1.pdf (one 13043 x 679 pt page = 22-page
+booklet; text is outlined, read from rendered pages 05, 07, 16, 17, 18). "(?)" = a second swipe page
+exists (two dots under the grid) but the manual does not show it. Layout data: widget2.bin
+(46 pages, see the project notes); texts: translation1.bin.
+
+First start (once, or after a factory reset)
+├── Select language (4 per page, swipe): 中文 · English · Português · 한국어 · …
+├── Select region: Mainland China · North America · Europe · Asia-Pacific · Other
+└── Device self-check (automatic)
+
+Home (status bar: UV LED °C · vat °C · USB · Wi-Fi)
+├── Print ............................ file list -> print (not shown in the manual)
+├── Tool
+│   ├── page 1
+│   │   ├── Device self-test
+│   │   │     Release film usage count (refresh button = reset counter)
+│   │   │     Status of LCD screen connection · LED status · Resin tank status ·
+│   │   │     Z-Axis motor status · X-Axis motor status · AI camera status ·
+│   │   │     Status of the fan · Mechanical Sensor Status (= strain gauge)
+│   │   └── Resin calibration (4-, 6-, 8-section exposure test models)
+│   └── page 2 (?)  - probably Accessibility features (manual pages 16-17)
+├── Settings
+│   ├── page 1
+│   │   ├── Print mode ............. normal / fast "S2" (I200 vs I210 tilt profile)
+│   │   ├── Version upgrade
+│   │   │   ├── Local upgrade ...... firmware from the USB stick -> version -> Confirm
+│   │   │   └── Check for updates .. online (pop-up "New version detected": printer /
+│   │   │                            camera firmware, Upgrade now / Cancel)
+│   │   └── Service
+│   └── page 2 (?)  - not shown (likely language, network/Wi-Fi, sound, factory reset ...)
+├── Device info
+│   ├── Printer name ............... (edit)
+│   ├── Account .................... Region · QR code + PIN for ELEGOO Matrix binding
+│   └── ID · Model · Serial number · System version (EL3D-4.0) · Firmware version ·
+│       AI camera firmware version · Network address
+└── Accessibility features (where it sits: see Tool page 2 above; 2 swipe pages)
+    ├── page 1: Lighting (on/off, for the AI camera) · Sound (on/off) ·
+    │           Tank heating (on/off: heating during print) ·
+    │           Resin preheating (on/off: pre-heat now, max 24 h)
+    └── page 2: Manual leveling (A4 paper at 4 corners -> Next / Cancel)

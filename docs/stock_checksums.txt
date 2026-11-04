@@ -1,0 +1,10 @@
+Stock Elegoo Saturn 4 Ultra 16K OTA V1.5.9 (Saturn4Ultra_OTA/), recorded 2026-10-15
+md5:
+36ac00b63562d342d7826a352286582d  Saturn4Ultra_OTA/ChituFPGA.bin
+2fa5c763a49e565b963ec0cf87704762  Saturn4Ultra_OTA/ChituUpgrade.bin
+sha256:
+909de1df5015f99e04e06399ff4ff798f15f736ec1eac29d2d1ea16ab3ed5508  Saturn4Ultra_OTA/ChituFPGA.bin
+f6a99d7d071e15523070b99cc328fed12ca9c94d3cdf7ec46c497e4ed5e25e56  Saturn4Ultra_OTA/ChituUpgrade.bin
+sizes:
+403464 Saturn4Ultra_OTA/ChituFPGA.bin
+80371736 Saturn4Ultra_OTA/ChituUpgrade.bin

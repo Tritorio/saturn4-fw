@@ -1,0 +1,26 @@
+HOW TO SEND A BOARD REPORT (for owners of a Saturn 4 Ultra 16K)
+================================================================
+Purpose: compare the electronics and the stock firmware of different units before a firmware mod is released. The report is read only:
+nothing is installed, flashed or changed on your printer, it can run on the stock firmware, and it holds no personal data (MAC addresses
+are masked; there is no serial number, Wi-Fi name or password, file name or printer ID). Read it before you post it.
+
+WHAT YOU NEED
+- the printer switched on, idle, on the same network (Wi-Fi or cable) as your PC
+- the printer's IP address (the printer's own settings screen, or your router's list of devices)
+- Python 3 on the PC (python.org; nothing else to install) and the file board_report_http.py
+
+STEPS
+1. Put board_report_http.py in a folder, open a terminal / command prompt in it.
+2. Run (replace the number with your printer's IP):
+       python3 board_report_http.py 192.168.1.50 > report.txt          (Windows: py board_report_http.py 192.168.1.50 > report.txt)
+   It takes 20 to 60 seconds. It reads a few files through the printer's own web page (port 3030). Add --no-image to skip the
+   30 MB check of the firmware copy kept inside the printer.
+3. Open report.txt, check that nothing private is in it, post it together with: the printer's firmware version on its screen, where
+   and when you bought it. Do NOT flash anything before the report was compared.
+
+WHAT THE REPORT SAYS
+- the CPU / eMMC / flash layout, the USB devices (Wi-Fi, camera), the FPGA and stepper driver lines of the app log
+- md5 checksums of the app, the FPGA file and the stored firmware copy against the values of the stock V1.5.9 firmware
+
+ADVANCED (a telnet / SSH login of your own): tools/board_report.sh does the same on the printer itself and adds the kernel command
+line and the U-Boot variables (cbd_board_name, dispout).
