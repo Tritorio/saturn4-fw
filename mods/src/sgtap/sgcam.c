@@ -26,6 +26,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <sys/stat.h>
+#include <sys/statvfs.h>
+#include <sys/wait.h>
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <time.h>
@@ -36,6 +39,9 @@ static const char *g_live = "/tmp/sgweb";
 static const char *g_rtsp = NULL;        /* default: the printer's own address as the viewer reached it (the loopback does not work on this printer) */
 static int g_allow_print;               /* set per viewer from the request */
 static int g_http = 8091, g_udp = 40100, g_ls = -1;
+static const char *g_csvdir = "/media/mmcblk0p2/sglog";
+static char g_host[48] = "";            /* the printer's own address as a viewer reached it (cached for the timelapse pictures) */
+#define TL_PORT 8092
 
 static int to_int(const char *s)       /* no atoi / strtol: GCC 15 maps them to __isoc23_* (missing in glibc 2.28) */
 {
@@ -557,6 +563,7 @@ static void serve_stream(int cli)
         if (getsockname(cli, (struct sockaddr *)&la, &ll) != 0 || !inet_ntop(AF_INET, &la.sin_addr, host, sizeof host))
             snprintf(host, sizeof host, "127.0.0.1");
     }
+    snprintf(g_host, sizeof g_host, "%s", host);
     snprintf(url, sizeof url, "rtsp://%s:554/video", host);
     us = socket(AF_INET, SOCK_DGRAM, 0);
     struct sockaddr_in a = {0};
@@ -712,6 +719,284 @@ out:
     free(c.pend);
 }
 
+
+/* ---- TIMELAPSE: libsgtap sends "T <layer> <job base>" to 127.0.0.1:8092 in the wait after each retract (only when the switch was on at the
+ * job start and the plate is above 45 mm). A child process (nice 19, hard 6 s alarm) takes the next key frame of the camera stream and appends it to
+ * <csvdir>/<job base>.h264 (an all-intra Annex-B file: SPS + PPS + IDR per picture; ffmpeg -framerate 30 -i X.h264 -c copy X.mp4). Nothing waits for it:
+ * a trigger that comes while the previous picture is still being taken is counted as skipped. The camera session is always closed with TEARDOWN. */
+static int g_ts = -1;                          /* trigger socket */
+static pid_t g_child;
+static char tl_base[200] = "";
+static unsigned tl_frames, tl_skipped, tl_failed;
+static int tl_layer = -1;
+
+static int own_host(char *host, size_t n)
+{
+    struct sockaddr_in a, l;
+    socklen_t ll = sizeof l;
+    int s2;
+    if (g_host[0] && strcmp(g_host, "127.0.0.1") != 0) {
+        snprintf(host, n, "%s", g_host);
+        return 1;
+    }
+    s2 = socket(AF_INET, SOCK_DGRAM, 0);
+    if (s2 < 0)
+        return 0;
+    memset(&a, 0, sizeof a);
+    a.sin_family = AF_INET;
+    a.sin_port = htons(9);
+    inet_pton(AF_INET, "192.0.2.1", &a.sin_addr);       /* nothing is sent: connect only picks the source address */
+    if (connect(s2, (struct sockaddr *)&a, sizeof a) != 0 || getsockname(s2, (struct sockaddr *)&l, &ll) != 0 ||
+        !inet_ntop(AF_INET, &l.sin_addr, host, (socklen_t)n)) {
+        close(s2);
+        return 0;
+    }
+    close(s2);
+    return 1;
+}
+
+/* NAL types of an access unit: bit 7 / 8 / 5; the SPS / PPS NALs (with start codes) are appended to hdr */
+static int au_scan(const uint8_t *d, size_t n, uint8_t *hdr, size_t *hn, size_t hcap)
+{
+    size_t i = 0;
+    int mask = 0;
+    while (i + 3 < n) {
+        size_t sc = 0;
+        if (d[i] == 0 && d[i + 1] == 0 && d[i + 2] == 1)
+            sc = 3;
+        else if (i + 4 < n && d[i] == 0 && d[i + 1] == 0 && d[i + 2] == 0 && d[i + 3] == 1)
+            sc = 4;
+        if (!sc) {
+            i++;
+            continue;
+        }
+        size_t s = i + sc, e = s;
+        while (e + 2 < n && !(d[e] == 0 && d[e + 1] == 0 && (d[e + 2] == 1 || (d[e + 2] == 0 && e + 3 < n && d[e + 3] == 1))))
+            e++;
+        if (e + 2 >= n)
+            e = n;
+        if (e > s) {
+            int type = d[s] & 0x1f;
+            if (type == 5)
+                mask |= 1;
+            if ((type == 7 || type == 8) && *hn + 4 + (e - s) <= hcap) {
+                mask |= type == 7 ? 2 : 4;
+                hdr[(*hn)++] = 0; hdr[(*hn)++] = 0; hdr[(*hn)++] = 0; hdr[(*hn)++] = 1;
+                memcpy(hdr + *hn, d + s, e - s);
+                *hn += e - s;
+            }
+        }
+        i = e > i ? e : i + 1;
+    }
+    return mask;
+}
+
+/* one picture: 0 = saved, else failed */
+static int grab_frame(const char *outpath)
+{
+    char host[48], url[80], turl[100], resp[2048], sess[80] = "", hdr[160];
+    int rt = -1, us = -1, cseq = 1, playing = 0, result = 1;
+    uint8_t *frame = NULL, dg[2048], sh[600];
+    size_t fn = 0, fcap = 0, shn = 0;
+    int haveTs = 0, corrupt = 0, lastseq = -1;
+    uint32_t lastTs = 0;
+    if (!own_host(host, sizeof host))
+        return 1;
+    snprintf(url, sizeof url, "rtsp://%s:554/video", host);
+    us = socket(AF_INET, SOCK_DGRAM, 0);
+    struct sockaddr_in a;
+    memset(&a, 0, sizeof a);
+    a.sin_family = AF_INET;
+    a.sin_addr.s_addr = htonl(INADDR_ANY);
+    int up = g_udp + 40, bound = 0;                          /* own port range: never the viewer's */
+    for (int k = 0; k < 20 && !bound; k++, up += 2) {
+        a.sin_port = htons((uint16_t)up);
+        bound = bind(us, (struct sockaddr *)&a, sizeof a) == 0;
+    }
+    up -= 2;
+    if (!bound)
+        goto out;
+    rt = socket(AF_INET, SOCK_STREAM, 0);
+    struct sockaddr_in ra;
+    memset(&ra, 0, sizeof ra);
+    ra.sin_family = AF_INET;
+    ra.sin_port = htons(554);
+    inet_pton(AF_INET, host, &ra.sin_addr);
+    if (connect(rt, (struct sockaddr *)&ra, sizeof ra) != 0 || !rtsp_cmd(rt, "OPTIONS", url, cseq++, NULL, "", resp, sizeof resp) ||
+        !rtsp_cmd(rt, "DESCRIBE", url, cseq++, NULL, "Accept: application/sdp\r\n", resp, sizeof resp) || !strstr(resp, "H264"))
+        goto out;
+    snprintf(hdr, sizeof hdr, "Transport: RTP/AVP/UDP;unicast;client_port=%d-%d\r\n", up, up + 1);
+    snprintf(turl, sizeof turl, "%s/track0", url);
+    if (!rtsp_cmd(rt, "SETUP", turl, cseq++, NULL, hdr, resp, sizeof resp) || !strstr(resp, " 200"))
+        goto out;
+    char *p = strcasestr(resp, "Session:");
+    if (p) {
+        p += 8;
+        while (*p == ' ')
+            p++;
+        size_t k = 0;
+        while (p[k] && p[k] != '\r' && p[k] != ';' && k < sizeof sess - 1) {
+            sess[k] = p[k];
+            k++;
+        }
+        sess[k] = 0;
+    }
+    playing = 1;
+    if (!rtsp_cmd(rt, "PLAY", url, cseq++, sess, "", resp, sizeof resp))
+        goto out;
+    double t0 = now_s();
+    while (now_s() - t0 < 5.0 && result) {
+        struct pollfd pf = {us, POLLIN, 0};
+        if (poll(&pf, 1, 200) <= 0)
+            continue;
+        ssize_t r = recv(us, dg, sizeof dg, 0);
+        if (r < 14)
+            continue;
+        int seq = (dg[2] << 8) | dg[3];
+        if (lastseq >= 0 && seq != ((lastseq + 1) & 0xffff))
+            corrupt = 1;
+        lastseq = seq;
+        uint32_t ts = ((uint32_t)dg[4] << 24) | ((uint32_t)dg[5] << 16) | ((uint32_t)dg[6] << 8) | dg[7];
+        if (haveTs && ts != lastTs) {                        /* a whole access unit */
+            size_t hn = 0;
+            uint8_t hb[600];
+            int m = fn ? au_scan(frame, fn, hb, &hn, sizeof hb) : 0;
+            if (m & 6) {                                     /* keep the newest SPS + PPS */
+                memcpy(sh, hb, hn);
+                shn = hn;
+            }
+            if ((m & 1) && !corrupt && shn) {
+                int fd = open(outpath, O_WRONLY | O_CREAT | O_APPEND, 0644);
+                if (fd >= 0) {
+                    int ok = 1;
+                    if (!(m & 2) || !(m & 4))
+                        ok = send_all(fd, sh, shn);
+                    ok = ok && send_all(fd, frame, fn);
+                    close(fd);
+                    result = ok ? 0 : 1;
+                    if (result == 0)
+                        break;
+                }
+            }
+            fn = 0;
+            corrupt = 0;
+        }
+        lastTs = ts;
+        haveTs = 1;
+        int off = 12 + 4 * (dg[0] & 15);
+        const uint8_t *src = dg + off;
+        size_t add = (size_t)r - (size_t)off;
+        int first = 0;
+        if (dg[off] == 0x1c && r > off + 2) {
+            first = (dg[off + 1] & 0x80) != 0;
+            src = dg + off + 2;
+            add -= 2;
+        }
+        if (fn + add + 1 > fcap) {
+            if (fn + add + 1 > ((size_t)1 << 21)) {
+                fn = 0;
+                continue;
+            }
+            fcap = (fn + add + 1) * 2;
+            frame = realloc(frame, fcap);
+            if (!frame)
+                abort();
+        }
+        if (first)
+            frame[fn++] = (uint8_t)((dg[off] & 0xe0) | (dg[off + 1] & 0x1f));
+        memcpy(frame + fn, src, add);
+        fn += add;
+    }
+out:
+    if (rt >= 0) {
+        if (playing)
+            rtsp_cmd(rt, "TEARDOWN", url, cseq++, sess, "", resp, sizeof resp);
+        close(rt);
+    }
+    if (us >= 0)
+        close(us);
+    free(frame);
+    return result;
+}
+
+static void tl_reap(void)
+{
+    int st;
+    if (g_child > 0 && waitpid(g_child, &st, WNOHANG) == g_child) {
+        g_child = 0;
+        if (WIFEXITED(st) && WEXITSTATUS(st) == 0)
+            tl_frames++;
+        else
+            tl_failed++;
+    }
+}
+
+static void tl_trigger(void)
+{
+    char m[300], path[320];
+    ssize_t r;
+    while ((r = recv(g_ts, m, sizeof m - 1, MSG_DONTWAIT)) > 0) {
+        int layer = 0;
+        const char *p = m, *b;
+        m[r] = 0;
+        if (m[0] != 'T' || m[1] != ' ')
+            continue;
+        p = m + 2;
+        while (*p >= '0' && *p <= '9')
+            layer = layer * 10 + (*p++ - '0');
+        if (*p++ != ' ' || !*p)
+            continue;
+        b = p;
+        for (const char *q = b; *q; q++)
+            if (*q == '/' || *q == '"' || *q == '\\' || (unsigned char)*q < 32)
+                goto skip;
+        if (strcmp(b, tl_base) != 0) {                      /* a new job */
+            snprintf(tl_base, sizeof tl_base, "%s", b);
+            tl_frames = tl_skipped = tl_failed = 0;
+        }
+        tl_layer = layer;
+        tl_reap();
+        if (g_child > 0) {
+            tl_skipped++;
+            continue;
+        }
+        snprintf(path, sizeof path, "%s/%s.h264", g_csvdir, tl_base);
+        g_child = fork();
+        if (g_child == 0) {
+            if (nice(19) < 0) {}
+            alarm(7);
+            _exit(grab_frame(path) == 0 ? 0 : 1);
+        }
+        if (g_child < 0) {
+            g_child = 0;
+            tl_failed++;
+        }
+    skip:;
+    }
+}
+
+static void tl_status(char *out, size_t n)
+{
+    struct statvfs sv;
+    char path[320];
+    long long bytes = 0, freemb = -1;
+    snprintf(path, sizeof path, "%s/%s.h264", g_csvdir, tl_base);
+    if (tl_base[0]) {                                       /* no stat: glibc 2.28 has it only in libc_nonshared */
+        int fd = open(path, O_RDONLY);
+        if (fd >= 0) {
+            off_t e = lseek(fd, 0, SEEK_END);
+            bytes = e > 0 ? (long long)e : 0;
+            close(fd);
+        }
+    }
+    if (statvfs(g_csvdir, &sv) == 0)
+        freemb = (long long)sv.f_bavail * (long long)sv.f_frsize / 1048576;
+    char fp[320];
+    snprintf(fp, sizeof fp, "%s/TIMELAPSE", g_csvdir);
+    snprintf(out, n, "{\"on\":%d,\"job\":\"%s\",\"frames\":%u,\"skipped\":%u,\"failed\":%u,\"layer\":%d,\"bytes\":%lld,\"free_mb\":%lld,\"busy\":%d}",
+             access(fp, F_OK) == 0, tl_base, tl_frames, tl_skipped, tl_failed, tl_layer, bytes, freemb, g_child > 0);
+}
+
 /* ---- HTTP front ---- */
 static const char PAGE[] =
     "<!doctype html><meta charset=utf-8><title>sgcam</title><body style=\"background:#000;color:#ccc;font:14px sans-serif\">"
@@ -757,7 +1042,7 @@ static int read_request(int fd, char *req, size_t n, double maxs)
 int main(int argc, char **argv)
 {
     int ch;
-    while ((ch = getopt(argc, argv, "p:u:r:l:")) != -1) {
+    while ((ch = getopt(argc, argv, "p:u:r:l:c:t:")) != -1) {
         if (ch == 'p')
             g_http = to_int(optarg);
         else if (ch == 'u')
@@ -766,6 +1051,10 @@ int main(int argc, char **argv)
             g_rtsp = optarg;
         else if (ch == 'l')
             g_live = optarg;
+        else if (ch == 'c')
+            g_csvdir = optarg;
+        else if (ch == 't')                    /* test: take one timelapse picture into the file and exit (0 = saved) */
+            return grab_frame(optarg);
         else
             return 2;
     }
@@ -786,9 +1075,25 @@ int main(int argc, char **argv)
         return 1;
     }
     fprintf(stderr, "sgcam: listening on %d\n", g_http);
+    g_ts = socket(AF_INET, SOCK_DGRAM, 0);
+    {
+        struct sockaddr_in ta;
+        memset(&ta, 0, sizeof ta);
+        ta.sin_family = AF_INET;
+        ta.sin_addr.s_addr = htonl(0x7f000001u);
+        ta.sin_port = htons(TL_PORT);
+        if (g_ts >= 0 && bind(g_ts, (struct sockaddr *)&ta, sizeof ta) != 0) {
+            close(g_ts);
+            g_ts = -1;
+        }
+    }
     while (!g_stop) {
-        struct pollfd pf = {g_ls, POLLIN, 0};
-        if (poll(&pf, 1, 500) <= 0)
+        struct pollfd pf[2] = {{g_ls, POLLIN, 0}, {g_ts, POLLIN, 0}};
+        int pr = poll(pf, g_ts >= 0 ? 2 : 1, 500);
+        tl_reap();
+        if (pr > 0 && g_ts >= 0 && (pf[1].revents & POLLIN))
+            tl_trigger();
+        if (pr <= 0 || !(pf[0].revents & POLLIN))
             continue;
         int cli = accept(g_ls, NULL, NULL);
         if (cli < 0)
@@ -804,8 +1109,20 @@ int main(int argc, char **argv)
                 g_allow_print = strncmp(req, "GET /cam?print=1 ", 17) == 0;
                 if (!g_allow_print && pr != 0)
                     http_reply(cli, 503, "text/plain", pr < 0 ? "printer state unknown" : "printer is printing: live view only when idle");
-                else
+                else {
+                    if (g_child > 0) {                      /* a timelapse picture is being taken: never two camera sessions */
+                        int st;
+                        waitpid(g_child, &st, 0);
+                        g_child = 0;
+                    }
                     serve_stream(cli);
+                    while (g_ts >= 0 && recv(g_ts, req, sizeof req, MSG_DONTWAIT) > 0)   /* triggers of the viewing time are stale */
+                        ;
+                }
+            } else if (strncmp(req, "GET /tl ", 8) == 0) {
+                char j[600];
+                tl_status(j, sizeof j);
+                http_reply(cli, 200, "application/json", j);
             } else if (strncmp(req, "GET /status ", 12) == 0) {
                 char j[60];
                 snprintf(j, sizeof j, "{\"idle\":%d,\"busy\":0}", printing() == 0);

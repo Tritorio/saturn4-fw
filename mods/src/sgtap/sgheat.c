@@ -10,13 +10,11 @@
  *     app's own saver (machine_param_ref.bin), H -> live ui param + ui saver; pre-heat
  *     on/off like the touch screen (heater state 3 + RAM flag; refused while printing or
  *     without a working sensor, or at/above the vat limit).
- *   - plate move with the dashboard's pre-heat: "heat P TPRE H TPRINT Z" (Z = 0|1, optional)
- *     sets the option <csvdir>/PREZ_ON and, when pre-heat is switched on / off by this command with Z = 1, the build
- *     plate is moved with the app's own axis_move (so the foreign matter guard acts on the way down): on = 5 mm/s
- *     down to 40 mm, then 2 mm/s down to 6 mm; off = up to 50 mm at 5 mm/s. Never from the touch screen's pre-heat.
- *     changing Z while pre-heat stays on moves the plate too (tick = down, untick = up); a settings restore never does.
- *     unticking (or pre-heat off) while the plate is still going down stops it (axis_stop(0)) and sends it back to where it was.
- *     One stage at a time, the next one when the app logs "axis 0 is idle"; idle printer, Z homed, guard armed only.
+ *   - RESIN MIXING (user, replaces "Plate into the resin"): command "mix MIN" (0 = stop): the build plate goes to Z low (the old
+ *     pre-heat position: 6 mm, 3 mm with the factory Z values), then up to Z low + 35 mm and down again, at 5 mm/s over the whole travel, for MIN
+ *     minutes counted from the first arrival at Z low; it ends by rising to Z = 50 mm (also after Stop). App's own axis_move (the foreign matter guard acts on the way down); one
+ *     move at a time, the next when the app logs "axis 0 is idle". Stop / pre-heat off / print job / guard trip: axis_stop (guard trip / print job: stays put), else Stop / pre-heat off: up to 50 mm.
+ *     Idle printer, Z homed, guard armed only. The "heat" command's 5th number (old plate option) is accepted and ignored.
  * Only inside /customer/resources/chitu V1.5.9: every code word below must match before
  * anything is read or written, else heating is off (live.json "heat": null).
  * Kill switch: /customer/mod/sgheat_disable (checked at start).
@@ -61,6 +59,7 @@ static const struct { uint32_t a, w; } h_sig[] = {
 };
 
 static void z_load(void);
+static int parse_int(const char **p, int *v);
 
 static void sgheat_init(void)
 {
@@ -78,19 +77,20 @@ static void sgheat_init(void)
 #define Z_MOVE     0x5361cu    /* void axis_move(int axis, int flags, float mm, float mm_s); flags 0 = absolute */
 #define Z_STOP     0x535b8u    /* void axis_stop(int axis): driver stop + queues flushed + position re-read; the app's own stop path calls it for axis 0 (Z) */
 #define Z_ARMED    0x2fdcb4u   /* int (0x2fdc58 + 0x5c): first sg calibration of the session done = foreign matter guard armed */
-#define Z_FAST     5.0f        /* mm/s */
-#define Z_SLOW     2.0f
-#define Z_SLOW_AT  40.0f       /* mm: fast down to here, slow below */
+#define Z_MIX_SPD  5.0f        /* mm/s, the whole travel */
+#define Z_END      50.0f       /* mm: where the plate goes when the mixing ends or is stopped */
+#define Z_MIX_SPAN 35.0f       /* mm: Z high = Z low + this */
 #define Z_PRE_FLEX 6.0f        /* mm: plate position while pre-heating (flex plate / not factory values) */
 #define Z_PRE_STD  3.0f        /* mm: the same with the factory Z values (Flex Plate switch off, sgmach.c) */
 static float z_pre_mm(void);   /* sgmach.c */
-#define Z_OFF      50.0f       /* mm: plate position after pre-heat is switched off */
-#define Z_OPTFILE  "PREZ_ON"
 
-static int z_opt;              /* option: move the plate with the dashboard's pre-heat */
+static int z_opt;              /* the old plate option: always 0 now (kept for the settings snapshot) */
 static int z_quiet;            /* set by the settings restore: changing the option must not move the plate */
-static int z_st;               /* 0 idle, 1 down to 40, 2 down to 6, 3 up to z_tgt (50 mm, or back to z_origin after a stop) */
-static float z_origin;         /* mm: where the plate was when the last downward move started */
+static int z_st;               /* 0 idle, 4 a mixing stroke is moving, 5 the plate rises to 50 mm at the end or after a stop */
+static int mix_ph;             /* 0 off, 1 first move to Z low, 2 up, 3 down */
+static unsigned mix_n;         /* strokes (up + down = 1) */
+static uint64_t mix_end;       /* us: end of the mixing time (0 until the first arrival at Z low) */
+static uint64_t mix_dur;       /* us */
 static float z_tgt;            /* mm: target of the move in progress */
 static uint64_t z_dead;        /* us: give up on the stage */
 static unsigned z_idle0, z_trig0;
@@ -98,21 +98,7 @@ static char z_msg[72] = "";
 
 static void z_load(void)
 {
-    char path[160];
-    snprintf(path, sizeof path, "%s/%s", sg_csvdir, Z_OPTFILE);
-    z_opt = access(path, F_OK) == 0;
-}
-
-static void z_set_opt(int on)
-{
-    char path[160];
-    int fd;
-    z_opt = on;
-    snprintf(path, sizeof path, "%s/%s", sg_csvdir, Z_OPTFILE);
-    if (!on)
-        unlink(path);
-    else if ((fd = real_open(path, O_WRONLY | O_CREAT | O_CLOEXEC, 0644)) >= 0)
-        real_close(fd);
+    z_opt = 0;
 }
 
 /* the Z axis struct when it looks right, else 0 */
@@ -159,59 +145,81 @@ static void z_go(float mm, float speed, double from, int st)
     z_dead = now_us() + (uint64_t)((dist / speed + 20.0) * 1e6);
     z_st = st;
     z_tgt = mm;
-    snprintf(z_msg, sizeof z_msg, "%s %.0f mm", st == 3 ? "going up to" : st == 1 ? "going down to" : "going down to", (double)mm);
+    snprintf(z_msg, sizeof z_msg, "%s %.0f mm", mm > from ? "going up to" : "going down to", (double)mm);
     move(0, 0, mm, speed);
 }
 
-/* "raise the plate" while it is still going down (option unticked / pre-heat off by mistake): stop it and go back to where it started */
-static const char *z_abort_back(void)
+/* stop the mixing (or any plate move of ours) at once and send the plate up to Z_END */
+static void mix_stop(const char *why)
 {
     double pos;
-    const char *why;
+    const char *w;
     struct timespec ts = {0, 300000000};
+    int was = mix_ph || z_st;
+    mix_ph = 0;
     z_st = 0;
+    if (!was)
+        return;
     ((void (*)(int))(uintptr_t)Z_STOP)(0);
-    nanosleep(&ts, NULL);                      /* the axis thread's idle line of the stopped move must not count for the next one */
-    if ((why = z_why_not(0, &pos))) {
-        snprintf(z_msg, sizeof z_msg, "stopped: %s", why);
-        return why;
+    nanosleep(&ts, NULL);                      /* the idle line of the stopped move must not count for the next one */
+    if ((w = z_why_not(0, &pos))) {
+        snprintf(z_msg, sizeof z_msg, "stopped: %s", w);
+        return;
     }
-    if (pos < z_origin - 0.1)
-        z_go(z_origin, Z_FAST, pos, 3);
-    else
-        snprintf(z_msg, sizeof z_msg, "stopped at %.0f mm", pos);
-    return NULL;
-}
-
-/* start the plate move for pre-heat on (down = 1) / off (0); returns NULL or why not */
-static const char *z_start(int down)
-{
-    double pos;
-    const char *why = z_why_not(down, &pos);
-    if (why)
-        return why;
-    if (z_st) {
-        if (!down && (z_st == 1 || z_st == 2))
-            return z_abort_back();
-        return "the plate is still moving";
-    }
-    if (down) {
-        z_origin = (float)pos;
-        if (pos > Z_SLOW_AT + 0.5)
-            z_go(Z_SLOW_AT, Z_FAST, pos, 1);
-        else if (pos > z_pre_mm() + 0.1 || pos < z_pre_mm() - 0.1)
-            z_go(z_pre_mm(), Z_SLOW, pos, 2);
-        else
-            snprintf(z_msg, sizeof z_msg, "plate already at %.0f mm", (double)z_pre_mm());
-    } else if (pos < Z_OFF - 0.1 && pos > -1) {
-        z_go(Z_OFF, Z_FAST, pos, 3);
+    if (pos < Z_END - 0.1) {
+        z_go(Z_END, Z_MIX_SPD, pos, 5);
+        snprintf(z_msg, sizeof z_msg, "%s: going up to %.0f mm", why, (double)Z_END);
     } else {
-        snprintf(z_msg, sizeof z_msg, "plate already at or above %.0f mm", (double)Z_OFF);
+        snprintf(z_msg, sizeof z_msg, "%s", why);
     }
-    return NULL;
 }
 
-/* every 0.5 s from the writer thread: next stage when the app says the axis is idle */
+/* "mix MIN": MIN minutes of mixing, 0 = stop */
+static void sgheat_mix_cmd(const char *c, char *res, size_t len)
+{
+    int min;
+    double pos, d;
+    uint32_t p;
+    const char *why;
+    if (!h_ok) {
+        snprintf(res, len, "error: plate control not available");
+        return;
+    }
+    if (!parse_int(&c, &min)) {
+        snprintf(res, len, "error: bad mix command");
+        return;
+    }
+    if (min == 0) {
+        if (mix_ph)
+            mix_stop("mixing stopped");
+        return;
+    }
+    if (mix_ph || z_st) {
+        snprintf(res, len, "error: the plate is still moving");
+        return;
+    }
+    if ((why = z_why_not(1, &pos)) || !(p = z_axis(&d))) {
+        snprintf(res, len, "error: %s", why ? why : "Z axis not found");
+        return;
+    }
+    if (z_pre_mm() + Z_MIX_SPAN > HI(p + 0x3c) * d - 0.5) {
+        snprintf(res, len, "error: Z high (%.0f mm) is beyond the travel of the Z axis", (double)(z_pre_mm() + Z_MIX_SPAN));
+        return;
+    }
+    mix_n = 0;
+    mix_end = 0;
+    mix_dur = (uint64_t)min * 60000000ull;
+    if (pos > z_pre_mm() + 0.1 || pos < z_pre_mm() - 0.1) {
+        mix_ph = 1;
+        z_go(z_pre_mm(), Z_MIX_SPD, pos, 4);
+    } else {
+        mix_ph = 2;
+        mix_end = now_us() + mix_dur;
+        z_go(z_pre_mm() + Z_MIX_SPAN, Z_MIX_SPD, pos, 4);
+    }
+}
+
+/* every 0.5 s from the writer thread: next stroke when the app says the axis is idle */
 static void sgheat_tick(void)
 {
     double pos;
@@ -219,42 +227,48 @@ static void sgheat_tick(void)
     if (!z_st)
         return;
     if (lg_z_trig != z_trig0) {
+        mix_ph = 0;
         z_st = 0;
         snprintf(z_msg, sizeof z_msg, "stopped: the foreign matter guard tripped");
     } else if (HW(H_PSTATE) == 10 || s_active) {
+        mix_ph = 0;
         z_st = 0;
         snprintf(z_msg, sizeof z_msg, "stopped: a print job started");
     } else if (lg_z_idle != z_idle0) {
-        if (z_st == 1) {
-            if ((why = z_why_not(1, &pos))) {
-                z_st = 0;
-                snprintf(z_msg, sizeof z_msg, "stopped: %s", why);
-            } else {
-                z_go(z_pre_mm(), Z_SLOW, pos, 2);
-            }
-        } else {
+        if (z_st == 5) {
             snprintf(z_msg, sizeof z_msg, "plate at %.0f mm", (double)z_tgt);
             z_st = 0;
+        } else if ((why = z_why_not(1, &pos))) {
+            mix_ph = 0;
+            z_st = 0;
+            snprintf(z_msg, sizeof z_msg, "stopped: %s", why);
+        } else if (mix_ph == 1 || mix_ph == 3) {             /* at Z low */
+            if (mix_ph == 1)
+                mix_end = now_us() + mix_dur;
+            else
+                mix_n++;
+            if (now_us() >= mix_end) {
+                mix_ph = 0;
+                z_st = 0;
+                if (pos < Z_END - 0.1) {
+                    z_go(Z_END, Z_MIX_SPD, pos, 5);
+                    snprintf(z_msg, sizeof z_msg, "mixing done: going up to %.0f mm", (double)Z_END);
+                } else {
+                    snprintf(z_msg, sizeof z_msg, "mixing done");
+                }
+            } else {
+                mix_ph = 2;
+                z_go(z_pre_mm() + Z_MIX_SPAN, Z_MIX_SPD, pos, 4);
+            }
+        } else {                                              /* at Z high */
+            mix_ph = 3;
+            z_go(z_pre_mm(), Z_MIX_SPD, pos, 4);
         }
     } else if (now_us() > z_dead) {
+        mix_ph = 0;
         z_st = 0;
         snprintf(z_msg, sizeof z_msg, "stopped: the move did not finish in time");
     }
-}
-
-/* "plateup": before a print started from the dashboard: with pre-heat on and "Plate into the resin" on the plate rises to
- * Z_OFF (50 mm) first; pre-heat and the option stay as they are. res "ok" (also when nothing is needed) or "error: ..." */
-static void sgheat_plateup_cmd(char *res, size_t len)
-{
-    const char *why;
-    if (!h_ok) {
-        snprintf(res, len, "error: plate control not available");
-        return;
-    }
-    if (!z_opt || !HB(H_UI + 0x15) || z_st == 3)
-        return;
-    if ((why = z_start(0)))
-        snprintf(res, len, "error: the plate could not be raised: %s", why);
 }
 
 /* vat temperature for the CSV: 1 = valid */
@@ -281,11 +295,12 @@ static int sgheat_json(char *buf, size_t len)
         snprintf(ts, sizeof ts, "%.2f", t);
     return snprintf(buf, len, ",\"heat\":{\"t\":%s,\"sensor\":%u,\"ready\":%u,\"state\":%u,"
                     "\"printing\":%d,\"pre\":%u,\"hp\":%u,\"tpre\":%d,\"tprint\":%d,\"max\":%d,"
-                    "\"zopt\":%d,\"zmove\":%d,\"zmsg\":\"%s\"}",
+                    "\"mix\":%d,\"mixleft\":%d,\"mixn\":%u,\"mixlo\":%.1f,\"mixhi\":%.1f,\"zmove\":%d,\"zmsg\":\"%s\"}",
                     ts, (unsigned)(HW(H_DEV) != 0), (unsigned)HB(H_DEV + 0x118),
                     (unsigned)HW(H_DEV + 0x114), HW(H_PSTATE) == 10, (unsigned)HB(H_UI + 0x15),
                     (unsigned)HB(H_UI + 0x14), (int)HI(H_MACH + 0x1a0), (int)HI(H_MACH + 0x198),
-                    (int)HI(H_MACH + 0x194), z_opt, z_st, z_msg);
+                    (int)HI(H_MACH + 0x194), mix_ph, mix_ph == 1 ? -1 : mix_ph ? (int)(mix_end > now_us() ? (mix_end - now_us()) / 1000000 : 0) : 0,
+                    mix_n, (double)z_pre_mm(), (double)(z_pre_mm() + Z_MIX_SPAN), z_st, z_msg);
 }
 
 static int parse_int(const char **p, int *v)
@@ -306,12 +321,11 @@ static int parse_int(const char **p, int *v)
 static void sgheat_cmd(const char *c, char *res, size_t len)
 {
     int pre, tpre, hp, tprint, max, cur_pre, zopt = -1;
-    const char *zwhy = NULL;
     double t;
     void (*set_state)(int) = (void (*)(int))(uintptr_t)H_SETSTATE;
     int (*save_mach)(void) = (int (*)(void))(uintptr_t)H_SAVEMACH;
     int (*save_ui)(void) = (int (*)(void))(uintptr_t)H_SAVEUI;
-    int save_u = 0, zchg;
+    int save_u = 0;
 
     if (!h_ok) {
         snprintf(res, len, "error: heating not available (unknown app version or disabled)");
@@ -373,13 +387,8 @@ static void sgheat_cmd(const char *c, char *res, size_t len)
         HB(H_UI + 0x15) = 0;
         save_u = 1;
     }
-    zchg = zopt >= 0 && zopt != z_opt;
-    if (zchg)
-        z_set_opt(zopt);
-    if (zopt == 1 && pre != cur_pre && (zwhy = z_start(pre)))
-        snprintf(res, len, "error: pre-heat %s, but the plate was not moved: %s", pre ? "is on" : "is off", zwhy);
-    else if (zchg && pre && cur_pre && !z_quiet && (zwhy = z_start(zopt)))   /* option changed while pre-heat stays on: tick = down, untick = up */
-        snprintf(res, len, "error: plate option %s, but the plate was not moved: %s", zopt ? "on" : "off", zwhy);
+    if (!pre && mix_ph)                           /* pre-heat off ends the mixing */
+        mix_stop("mixing stopped");
     if (save_u && save_ui() != 0)
         snprintf(res, len, "error: set, but saving ui_param_ref.bin failed");
 }

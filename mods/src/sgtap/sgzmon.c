@@ -220,11 +220,18 @@ static int sgzmon_json(char *buf, size_t len)
     if (!zm_ok)
         return snprintf(buf, len, ",\"zm\":null");
     now = zm_now_mm(&ok);
+    double zero = 0;
+    int zk = zm_zero_mm(&zero);
+    char zs[24];
+    if (zk)
+        snprintf(zs, sizeof zs, "%.3f", zero);
+    else
+        snprintf(zs, sizeof zs, "null");
     pthread_mutex_lock(&zm_lock);
     if (ok)
-        n = snprintf(buf, len, ",\"zm\":{\"now\":%.3f,\"n\":%d,\"max\":%.1f,\"h\":[", now, zm_n, zm_max);
+        n = snprintf(buf, len, ",\"zm\":{\"now\":%.3f,\"zero\":%s,\"n\":%d,\"max\":%.1f,\"h\":[", now, zs, zm_n, zm_max);
     else                                                       /* Z not homed yet (just after the boot): null, never an invalid number */
-        n = snprintf(buf, len, ",\"zm\":{\"now\":null,\"n\":%d,\"max\":%.1f,\"h\":[", zm_n, zm_max);
+        n = snprintf(buf, len, ",\"zm\":{\"now\":null,\"zero\":%s,\"n\":%d,\"max\":%.1f,\"h\":[", zs, zm_n, zm_max);
     for (int i = 0; i < zm_n && n < (int)len - 60; i++) {
         n += snprintf(buf + n, len - (size_t)n, "%s[%d,%.3f,", i ? "," : "", zm_h[i].layer, zm_h[i].z);
         n += zm_h[i].has ? snprintf(buf + n, len - (size_t)n, "%.1f,%d,%.0f]", zm_h[i].step, zm_h[i].fl, zm_h[i].lh) : snprintf(buf + n, len - (size_t)n, "null,0,%.0f]", zm_h[i].lh);

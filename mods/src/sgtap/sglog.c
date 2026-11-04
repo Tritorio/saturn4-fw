@@ -28,11 +28,13 @@
  *   z_ret_mm,z_step_um (sgzmon.c): on the first row after the start of each exposure: the print height (mm: the app's Z step counter minus the Z zero of the machine settings) after the retract, and the step from the previous layer in um (empty on the first layer).
  *   expo_file,expo_set,expo_used (sgexpo.c): on the first row after each finished exposure: the print file's exposure time, the value set by the
  *   exposure override (empty = none) and the measured exposure (s).
+ *   Line 2 of the CSV = one quoted description per column (sgcolumns.h, same text in the .txt as column_help); data from line 3.
  * - <csvdir>/DISABLE stops new sessions. Oldest files deleted above 200 MB in total.
  * Env (tests): SGTAP_GAUGE (tty path prefix), SGTAP_LOG, SGTAP_CSVDIR.
  */
 #include <dirent.h>
 #include <sys/stat.h>
+#include "sgcolumns.h"
 
 #define CSV_TOTAL_MAX  (200u << 20)
 #define CSV_FILE_MAX   (50u << 20)
@@ -457,6 +459,9 @@ static void csv_open(void)
     csv_printf("k=%.2f\ngrams=g = (raw - ref) / k, ref = zero*100 until calibrate ends\n", s_k);
     csv_printf("columns=time_utc,t_s,layer,phase,raw_last,value,value_min,value_max,n,"
                "raw_min,raw_max,g,g_min,g_max,tank_c,wait_s,wait_end,heat_w,cpu,rel_v1,rel_v2,sep_deg,sep_kind,ret_v1,ret_v2,dl_peak_g,dl_f,expo_file,expo_set,expo_used,z_ret_mm,z_step_um\n");
+    csv_printf("column_help:\n");
+    for (unsigned i = 0; i < sizeof csv_cols / sizeof csv_cols[0]; i++)
+        csv_printf("  %-10s = %s\n", csv_cols[i][0], csv_cols[i][1]);
     if (csv_fd >= 0)
         real_close(csv_fd);
     snprintf(name, sizeof name, "%s/%s_%s.csv", sg_csvdir, ts, base);
@@ -464,6 +469,10 @@ static void csv_open(void)
     csv_bytes = 0;
     csv_printf("time_utc,t_s,layer,phase,raw_last,value,value_min,value_max,n,"
                "raw_min,raw_max,g,g_min,g_max,tank_c,wait_s,wait_end,heat_w,cpu,rel_v1,rel_v2,sep_deg,sep_kind,ret_v1,ret_v2,dl_peak_g,dl_f,expo_file,expo_set,expo_used,z_ret_mm,z_step_um\n");
+    /* line 2: one quoted description per column; data starts on line 3 */
+    for (unsigned i = 0; i < sizeof csv_cols / sizeof csv_cols[0]; i++)
+        csv_printf("%s\"%s\"", i ? "," : "", csv_cols[i][1]);
+    csv_printf("\n");
 }
 
 /* calibrate phase over: its mean raw becomes the grams reference (noted in the .txt) */

@@ -36,6 +36,9 @@
 #define _GNU_SOURCE
 #include <dlfcn.h>
 #include <errno.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
 #include <fcntl.h>
 #include <pthread.h>
 #include <stdarg.h>

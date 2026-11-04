@@ -33,6 +33,7 @@ static void sgwait_init(void);
 static void sgwait_tick(int reload);
 static void sgwait_cmd(const char *c, char *res, size_t len);
 static void sgwait_min2_cmd(const char *c, char *res, size_t len);
+static void sgtl_cmd(const char *c, char *res, size_t len);
 static void sgset_cmd(const char *c, char *res, size_t len);
 static int sgwait_json(char *buf, size_t len);
 static int sgwait_take_tare(double *raw, int *layer);
@@ -358,8 +359,10 @@ static void run_cmd(const char *id, char *c)
         }
     } else if (strncmp(c, "heat ", 5) == 0) {
         sgheat_cmd(c + 5, cmd_res, sizeof cmd_res);
-    } else if (strncmp(c, "plateup", 7) == 0) {
-        sgheat_plateup_cmd(cmd_res, sizeof cmd_res);
+    } else if (strncmp(c, "tl ", 3) == 0) {
+        sgtl_cmd(c + 3, cmd_res, sizeof cmd_res);
+    } else if (strncmp(c, "mix ", 4) == 0) {
+        sgheat_mix_cmd(c + 4, cmd_res, sizeof cmd_res);
     } else if (strncmp(c, "waitmin2 ", 9) == 0) {
         sgwait_min2_cmd(c + 9, cmd_res, sizeof cmd_res);
     } else if (strncmp(c, "waitov ", 7) == 0) {

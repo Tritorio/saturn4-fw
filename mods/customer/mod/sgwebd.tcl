@@ -13,7 +13,7 @@
 #                          "tilt N A B C D E F S P R T X Y" (N 0-999, speeds 10-144 even, stage
 #                          angles E F X Y 0 or 10-120 even) | "tilt stock" |
 #                          "slowset A B C D E F" (slow layer set: speeds 10-144 even, angles E F
-#                          0 or 10-120 even) | "slowbeep 0|1|test" (dev: beep 2 layers before a slow range; test beep) | "mx on" | "mx off" | "mx set T1 T2 T3 T4 MIRX MIRY" (Multi Exposure, AA variant: quadrant times in s >= 0.1, mirror flags) | "expo off" | "expo B N" (exposure time of the bottom / normal layers in ms 0-60000, "-" = the file's value; print job running only) | "waitov 0|1" (ignore the slicer wait after retract while the dynamic wait is on) | "gsync ON AUTO OFFSET_MS" | "gsync search" (release synced to the gauge poll clock) | "slowlayers 0|1" (slow layer lists on/off) | "tilt2 0|1" (two-stage fix) | "joblog 0|1" (CSV per print) | "uisleep IDLE PRINT" (UI loop sleep, ms 5-500)
+#                          0 or 10-120 even) | "slowbeep 0|1|test" (dev: beep 2 layers before a slow range; test beep) | "mx on" | "mx off" | "mx set T1 T2 T3 T4 MIRX MIRY" (Multi Exposure, AA variant: quadrant times in s >= 0.1, mirror flags) | "expo off" | "expo B N" (exposure time of the bottom / normal layers in ms 0-60000, "-" = the file's value; allowed without a job: the times wait for the next job) | "waitov 0|1" (ignore the slicer wait after retract while the dynamic wait is on) | "gsync ON AUTO OFFSET_MS" | "gsync search" (release synced to the gauge poll clock) | "slowlayers 0|1" (slow layer lists on/off) | "tilt2 0|1" (two-stage fix) | "joblog 0|1" (CSV per print) | "uisleep IDLE PRINT" (UI loop sleep, ms 5-500)
 #                          -> /tmp/sgweb/cmd.<id> for libsgtap (result in live.json "cmd")
 #   POST /api/slow         body "<print file name without extension>\n<layer list>": checks the
 #                          list (layers 1-based, "20-35" / "120", separated by commas, spaces
@@ -438,7 +438,8 @@ proc handle {c method path query host body origin} {
             } elseif {[regexp {^lcdshow ([a-z0-9_-]{1,32}) ([0-9]{1,3}) ([0-9]{1,3})$} $cmd -> ln ld ls]} {
                 if {$ld > 100 || $ls < 1 || $ls > 30} { return [err $c 400 "bad command"] }
             } elseif {[regexp {^lcdswap ([a-z0-9_-]{1,32}) [01]$} $cmd]} {
-            } elseif {$cmd eq "plateup"} {
+            } elseif {[regexp {^mix ([0-9]{1,4})$} $cmd]} {
+            } elseif {$cmd eq "tl on" || $cmd eq "tl off"} {
             } elseif {[regexp {^waitov [01]$} $cmd]} {
             } elseif {$cmd eq "expo off"} {
             } elseif {[regexp {^expo (-|[0-9]{1,5}) (-|[0-9]{1,5})$} $cmd -> eb en]} {
@@ -603,6 +604,7 @@ proc handle {c method path query host body origin} {
                 }
                 file delete $csvdir/$name
                 file delete $csvdir/[file rootname $name].txt
+                file delete $csvdir/[file rootname $name].h264
                 incr n
             }
             log "job logs deleted: $n, skipped: [llength $skipped]"

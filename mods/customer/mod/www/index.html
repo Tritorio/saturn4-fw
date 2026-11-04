@@ -18,7 +18,7 @@
     --warnfill: #f0b429; --bgimg: url(/customer/resources/image/2041.png); --thumbbg: #000; --thumbbg2: #111;
     --cardbd: #222; --fill1: #2a2a2a; --btnbg: #2e2e2e; --btnhov: #383838; --pilltxt: #a3a3a3; --pillbd: #a3a3a366;
     --onbg: #1f3a17; --onbg2: #1d3313; --onbg3: #233a19; --gtxt2: #8fe36a; --gbd: #8fe36a66; --selsub: #a8bba0;
-    --seltag: #a8e08a; --pu: #c79bff; --pubg: #2a1d3d; --cblue: #4da3ff; --bluebg: #10263d; --lobg: #14233b;
+    --seltag: #a8e08a; --pu: #c79bff; --pubg: #2a1d3d; --cblue: #4da3ff; --bluebg: #10263d; --lobg: #14233b; --dlo: #223f6a; --dhi: #5c3a17; --dpu: #46306b;
     --hibg: #35220f; --lotag: #0d1828; --lotagtxt: #9cc2ff; --hitag: #241508; --hitagtxt: #ffb877; --errtxt: #ff8a8a;
     --dangerbg: #3a1c1c; --errbg: #2a1414; --orange: #ff8a5c; --cyellow: #f0b429; --yline: #f0b4298c;
     --yline2: #f0b42988; --warnbgb: #2a2210; --warnbg: #2a2310; --cbg: #3a2a14; --cbg2: #3a2e10; --mbg: #2e2410;
@@ -34,7 +34,7 @@
     --bgimg: none; --thumbbg: #e3e5df; --thumbbg2: #e3e5df; --cardbd: #d8dbd3; --fill1: #e7e9e3; --btnbg: #d9dcd4;
     --btnhov: #c9ccc3; --pilltxt: #55584f; --pillbd: #55584f66; --onbg: #dff3d6; --onbg2: #e1f2da; --onbg3: #dff3d6;
     --gtxt2: #2a7414; --gbd: #2a741499; --selsub: #4a6a40; --seltag: #1f5a10; --pu: #6b2fb3; --pubg: #efe4fb;
-    --cblue: #1f5fcf; --bluebg: #dbe8fb; --lobg: #e3ecfb; --hibg: #fdeedd; --lotag: #cfdcf5; --lotagtxt: #1d47a8;
+    --cblue: #1f5fcf; --bluebg: #dbe8fb; --lobg: #e3ecfb; --dlo: #e3ecfb; --dhi: #fdeedd; --dpu: #efe4fb; --hibg: #fdeedd; --lotag: #cfdcf5; --lotagtxt: #1d47a8;
     --hitag: #f6d9b8; --hitagtxt: #8a4a00; --errtxt: #c02424; --dangerbg: #fbdada; --errbg: #fbe3e3;
     --orange: #c2410c; --cyellow: #a86f00; --yline: #a86f008c; --yline2: #a86f0088; --warnbgb: #fdf0cc;
     --warnbg: #fdf0cc; --cbg: #fbe7bd; --cbg2: #fbe7bd; --mbg: #fdf0cc; --exbantxt: #5a3d00; --mnotetxt: #6b4700;
@@ -358,14 +358,14 @@
   .tn output { min-width: 48px; text-align: center; font-size: 17px; font-weight: 500; font-variant-numeric: tabular-nums; }
   .tgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; margin-top: 12px; }
   @media (max-width: 600px) { .tgrid { grid-template-columns: minmax(0, 1fr); } }
-  .tm-panel { min-width: 0; border-radius: 8px; padding: 12px; background: var(--lobg); }
-  .tm-panel.hi { background: var(--hibg); }
+  .tm-panel { min-width: 0; border-radius: 8px; padding: 12px; background: var(--dlo); }
+  .tm-panel.hi { background: var(--dhi); }
   .tm-head { display: flex; justify-content: space-between; align-items: start; gap: 8px; }
   .tm-head b { font-size: 16px; font-weight: 600; }
   .tm-head .dtag { margin: 0; flex: none; }
   .tm-route { font-size: 13px; color: var(--ink2); margin-top: 2px; }
-  .dial { margin: 0; border-radius: 8px; padding: 8px 6px 6px; min-width: 0; background: var(--lobg); }
-  .dial.hi { background: var(--hibg); }
+  .dial { margin: 0; border-radius: 8px; padding: 8px 6px 6px; min-width: 0; background: var(--dlo); }
+  .dial.hi { background: var(--dhi); }
   .dtag { display: block; width: max-content; margin: 0 auto 4px; border-radius: 6px; padding: 1px 8px;
     font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums; color: var(--lotagtxt); background: var(--lotag); }
   .dial.hi .dtag, .tm-panel.hi .dtag { color: var(--hitagtxt); background: var(--hitag); }
@@ -514,7 +514,7 @@
   .slhead { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-top: 14px;
     padding-top: 12px; border-top: 1px solid var(--line); }
   .slhead .label { color: var(--pu); font-weight: 500; }
-  .dial.sl { background: var(--pubg); }
+  .dial.sl { background: var(--dpu); }
 
   /* UI loop sleep (8.22), opened from the CPU meter */
   #syscpu { background: none; border: 0; padding: 0; margin: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; }
@@ -796,6 +796,8 @@
       <video id="camvid" muted playsinline style="width: 100%; height: 100%; display: block; object-fit: contain"></video>
       <div id="cammsg" class="sub" style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 12px"></div>
     </div>
+    <label class="hsw" style="margin-top: 12px"><span>Timelapse <span class="sub" style="font-weight: 400" id="tlinfo">· one picture per layer, for the next jobs</span></span><input type="checkbox" id="tlsw" role="switch" aria-label="Timelapse"></label>
+    <div class="tnote qnote" hidden><b>Timelapse:</b> with the switch on at the start of a job, the printer saves one camera picture per layer, taken in the wait after the retract while the plate is at rest, and only from the layer on where the plate is above Z = 45 mm. A separate low-priority program takes them: the print timing is never changed, and a layer whose picture is not ready in time is skipped. The pictures of a job are one H.264 file stored with the job log; download it with the film button in the Print job history card (make the video on your PC: ffmpeg -framerate 30 -i JOB.h264 -c copy JOB.mp4). Deleting the job log deletes the timelapse too; nothing is deleted automatically.</div>
     <div class="tnote qnote" hidden>The picture is the printer's own camera, relayed by a small program on the printer (sgcam, port 8091) as a standard video stream. It starts when you open the card or switch it on and stops when you close the card, switch it off or close the page. It also runs during a print (still being tried: it adds some load on the printer, so watch the force curve and switch it off if the prints show any change). Only one viewer at a time. The camera session on the printer is always closed again. The picture is delayed by about half a second, and starts 2 to 3 seconds after opening (it waits for the next key frame). Anyone on your network can open the video address; the printer's own camera port is open to the network in the same way.</div>
   </section>
 
@@ -926,10 +928,21 @@
       <span>Above 30 °C is not recommended for pre-heat: the resin is not stirred and the VAT can get very hot.</span>
     </div>
 
-    <div id="hzrow" hidden class="cxa">
-      <label class="hsw"><span>Plate into the resin <span class="sub" style="font-weight:400">· with the pre-heat switch of this card</span></span><input type="checkbox" id="hpz" role="switch"></label>
+    <div id="mixbox" hidden class="cxa">
+      <div class="hrow">
+        <div class="hbox">
+          <label class="label" for="hmin">Resin mixing</label>
+          <div class="step">
+            <button class="sb" data-t="hmin" data-d="-1" aria-label="Fewer minutes">−</button>
+            <span class="sv"><input id="hmin" type="number" min="1" step="1" inputmode="numeric" value="10">min</span>
+            <button class="sb" data-t="hmin" data-d="1" aria-label="More minutes">+</button>
+          </div>
+        </div>
+        <div class="hbox"><button class="btn" id="mixgo">Start mixing</button></div>
+      </div>
       <div class="wnote">
-        <span class="qnote" hidden>Pre-heat on: the build plate goes down at <b>5 mm/s</b> to 40 mm, then at <b>2 mm/s</b> to <b>6 mm</b>, so it is warmed with the resin. Pre-heat off: it goes up to <b>50 mm</b>. Only when switched here (not from the printer's screen), with the printer idle, Z homed and the foreign matter guard armed. Needs the tank in place.</span>
+        <span class="sub" id="mixz"></span>
+        <span class="qnote" hidden>The build plate moves between Z low and Z high (Z low + 35 mm) for the set time, so the resin is stirred while it warms. Z low is the plate position of the pre-heat (6 mm, 3 mm with the factory Z values). Stop, or switching pre-heat off, halts the plate at once; when the time is over, or after a stop, the plate rises to Z = 50 mm. The foreign matter guard acts on the way down. Only with the printer idle, Z homed, the guard armed (about a minute after the boot) and the tank in place.</span>
         <span id="hzmsg" class="sub"></span>
       </div>
     </div>
@@ -1649,8 +1662,10 @@ function render() {
     if (!active && H && H.pre) { $("phase").textContent = "Pre-heating vat"; $("phase").className = "phase warm"; }
     else if (active && Wt && Wt.heating) { $("phase").textContent = `Heating in the wait · layer ${Wt.layer}`; $("phase").className = "phase warm"; }
     else $("phase").className = "phase";
-    { const Z = L && L.zm, e = Z && Z.h && Z.h[Z.h.length - 1];             // Z position = the print height printed so far (plate position minus the Z zero, after the last retract)
-      $("zpos").textContent = active && e ? `Z position ${e[1].toFixed(3)} mm` : ""; }
+    { const Z = L && L.zm;                                                 // live Z position = plate position minus the Z zero of the machine settings (rewritten by the levelling)
+      const ok = Z && Z.now != null && Z.zero != null;
+      $("zpos").textContent = ok ? `Z position ${(Z.now - Z.zero).toFixed(3)} mm` : "";
+      $("zpos").title = "Live plate height above the Z zero (the floor contact measured by the last levelling); 0 = the plate touches the floor of the vat"; }
     $("film").textContent = st.ReleaseFilm != null ? st.ReleaseFilm.toLocaleString("en-US") +
       (attrs && attrs.ReleaseFilmMax ? ` / ${attrs.ReleaseFilmMax / 1000}k` : "") : "–";
   }
@@ -1991,7 +2006,7 @@ const WRITE_SEL = ["#tare", "#auto", "label:has(#auto)", "#heatapply", "#dwapply
   "#dlon", "label:has(#dlon)", "#dlapply", "#dlreset", "#xmminus", "#xmplus", "#xmgo", '[data-xm]:not([data-xm="c"])', "#exapply", "#exrevert", "#exsw", "label:has(#exsw)", "#mxsw", "label:has(#mxsw)", "#mxfrom", "#mxfromm", "#mxfromp", "#jlsw", "label:has(#jlsw)", "#mxstate", "#qmap input", "#qmap button", "#dwstate", "#hstate", "#gsstate", "#dlstate", "#exstate", "#fxstate", "#tcstate",
   "#fxsw", "#fxoff", "#fxon", "#slapply", "#tapply", "#tcon", "label:has(#tcon)", "#gsapply", "#gssearch", "#slbeep", "label:has(#slbeep)", "#slbtest",
   "#slsave", "#sldel", "#hdel", "#mapply", "#calopen", "#calapply", "#logall", "#pwchange", "#stockrestore",
-  "#plist button[data-pa]", "#mbaks button[data-restore]", "#mbaks button[data-delbak]", "#featlist [data-sw]", "#featlist [data-note]", "#featlist label.fnote"].join(",");
+  "#plist button[data-pa]", "#mbaks button[data-restore]", "#mbaks button[data-delbak]", "#tlsw", "#featlist [data-sw]", "#featlist [data-note]", "#featlist label.fnote"].join(",");
 // The cards made for writing are greyed as a whole while logged out, except their graphs (canvas / svg role="img"): a block of the card
 // that holds no graph is greyed, the graph and the path to it stay. The other controls (Force card, Features list) are greyed one by one.
 const WRITE_CARDS = "#xmcard, #excard, #mxcard, #fxcard, #heatcard, #dwcard, #gscard, #dlcard, #tiltcard, #slsetcard, #slowcard, #setcard, #machcard";
@@ -2081,7 +2096,6 @@ function heatOpen(open) {
   $("heatcard").hidden = !open;
   if (open) {
     $("hpre").checked = !!H.pre; $("hhp").checked = !!H.hp;
-    $("hpz").checked = !!H.zopt;
     $("htpre").value = H.tpre; $("htprint").value = H.tprint;
     const W = wait(); $("hwait").checked = !!(W && W.wh);
     HT.last = null;
@@ -2095,10 +2109,9 @@ function heatRender() {
   if (!HT.open) return;
   // a change made elsewhere (Features list, the status line switch, Settings restore) moves the card's switches; a field the user is
   // editing (draft) is only overwritten when the live value of that field itself changed
-  const Wl = wait(), cur = {pre: !!H.pre, hp: !!H.hp, z: !!H.zopt, wh: !!(Wl && Wl.wh), tpre: H.tpre, tprint: H.tprint}, was = HT.last || cur;
+  const Wl = wait(), cur = {pre: !!H.pre, hp: !!H.hp, wh: !!(Wl && Wl.wh), tpre: H.tpre, tprint: H.tprint}, was = HT.last || cur;
   if (cur.pre !== was.pre) $("hpre").checked = cur.pre;
   if (cur.hp !== was.hp) $("hhp").checked = cur.hp;
-  if (cur.z !== was.z) $("hpz").checked = cur.z;
   if (cur.wh !== was.wh) $("hwait").checked = cur.wh;
   if (cur.tpre !== was.tpre && document.activeElement !== $("htpre")) $("htpre").value = cur.tpre;
   if (cur.tprint !== was.tprint && document.activeElement !== $("htprint")) $("htprint").value = cur.tprint;
@@ -2115,8 +2128,15 @@ function heatRender() {
   $("hpre").disabled = H.printing && !H.pre;
   $("hpre").parentElement.title = $("hpre").disabled ? "Pre-heat is not possible while printing" : "";
   $("hwarn").hidden = !(+$("htpre").value > PRE_WARN);
-  $("hzrow").hidden = H.zopt === undefined;
-  $("hzmsg").textContent = H.zmsg ? "Plate: " + H.zmsg : "";
+  const mixing = !!H.mix;                                   // live.json heat.mix: 0 off, 1 going to Z low, 2 up, 3 down
+  $("mixbox").hidden = H.mix === undefined;
+  $("hmin").disabled = mixing;
+  for (const b of document.querySelectorAll('#mixbox .sb')) b.disabled = mixing;
+  $("mixgo").textContent = mixing ? "Stop mixing" : "Start mixing";
+  $("mixgo").className = "btn" + (mixing ? " danger" : "");
+  $("mixgo").disabled = HT.busy || (!mixing && (H.printing || !!H.zmove));
+  $("mixz").textContent = H.mixlo !== undefined ? `Z low ${H.mixlo.toFixed(1)} mm · Z high ${H.mixhi.toFixed(1)} mm` : "";
+  $("hzmsg").textContent = mixing ? (H.mix === 1 ? "going to Z low" : `${fmtT(Math.max(0, H.mixleft) * 1000)} left · stroke ${H.mixn + 1}`) : H.zmsg ? "Plate: " + H.zmsg : "";
   for (const p of document.querySelectorAll("#heatcard .presets")) {
     const v = +$(p.dataset.t).value;
     for (const b of p.children) b.classList.toggle("on", +b.textContent === v);
@@ -2136,7 +2156,7 @@ function heatRender() {
     $("hwcount").textContent = W.n ? `Heated ${W.nh} of ${W.n} layers this job` : "No layers yet this job";
   }
   // Apply is faded out while the card shows what the printer runs (same as the Dynamic wait and Tilt speed cards)
-  const dirtyH = $("hpre").checked !== cur.pre || $("hhp").checked !== cur.hp || ($("hpz").checked !== cur.z && H.zopt !== undefined) ||
+  const dirtyH = $("hpre").checked !== cur.pre || $("hhp").checked !== cur.hp ||
     ($("hwait").checked && $("hhp").checked) !== cur.wh || clampT("htpre", +$("htpre").value || HMIN) !== cur.tpre || clampT("htprint", +$("htprint").value || HMIN) !== cur.tprint;
   $("heatapply").disabled = HT.busy || !dirtyH;
 }
@@ -2152,14 +2172,23 @@ for (const id of ["htpre", "htprint"]) {
   $(id).addEventListener("change", () => { $(id).value = clampT(id, +$(id).value || HMIN); heatRender(); });
 }
 $("hpre").addEventListener("change", heatRender);
-$("hpz").addEventListener("change", heatRender);
+$("hmin").addEventListener("change", () => { $("hmin").value = Math.max(1, Math.floor(+$("hmin").value) || 10); try { localStorage.sgmixmin = $("hmin").value; } catch (e) {} });
+try { if (localStorage.sgmixmin) $("hmin").value = localStorage.sgmixmin; } catch (e) {}
+$("mixgo").addEventListener("click", async () => {
+  const H = heat(); if (!H) return;
+  const min = Math.max(1, Math.floor(+$("hmin").value) || 10);
+  $("hmin").value = min;
+  HT.busy = true; heatRender();
+  try { await cmd(H.mix ? "mix 0" : `mix ${min}`); toast(H.mix ? "Mixing stopped" : `Mixing for ${min} min`); }
+  catch (e) { toast("Mixing: " + e.message, true); }
+  HT.busy = false; heatRender();
+});
 $("hhp").addEventListener("change", heatRender);
 $("hwait").addEventListener("change", heatRender);
 
 $("heatapply").addEventListener("click", async () => {
   const tpre = clampT("htpre", +$("htpre").value || HMIN), tprint = clampT("htprint", +$("htprint").value || HMIN);
-  const H0 = heat(), line = `heat ${$("hpre").checked ? 1 : 0} ${tpre} ${$("hhp").checked ? 1 : 0} ${tprint}` +
-    (H0 && H0.zopt !== undefined ? ` ${$("hpz").checked ? 1 : 0}` : "");
+  const line = `heat ${$("hpre").checked ? 1 : 0} ${tpre} ${$("hhp").checked ? 1 : 0} ${tprint}`;
   HT.busy = true; heatRender();
   try {
     await cmd(line);
@@ -2915,9 +2944,29 @@ $("camsw").addEventListener("change", () => camOpen($("camsw").checked));       
   st.addEventListener("click", go);
   st.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } }); }
 window.addEventListener("pagehide", camStop);
+// Timelapse (sgcam GET /tl): the switch = the file TIMELAPSE on the printer (command "tl on|off", needs the login), read at the start of a job
+const TLS = {last: null, t: 0, busy: false};
+async function tlPoll() {
+  TLS.t = Date.now();
+  try {
+    const j = await (await fetch(camBase() + "/tl", {cache: "no-store"})).json();
+    TLS.last = j;
+    if (!TLS.busy) $("tlsw").checked = !!j.on;
+    const act = L && L.job && L.job.active && j.job && L.job.csv && L.job.csv.replace(/\.csv$/, "") === j.job;
+    $("tlinfo").textContent = act ? `· recording: ${j.frames} pictures${j.skipped ? `, ${j.skipped} skipped` : ""}${j.failed ? `, ${j.failed} failed` : ""} · ${fmtSize(j.bytes)}` +
+      (j.free_mb >= 0 ? ` · ${fmtSize(j.free_mb * 1048576)} free` : "") : "· one picture per layer, for the next jobs" + (j.free_mb >= 0 ? ` · ${fmtSize(j.free_mb * 1048576)} free` : "");
+  } catch (e) { $("tlinfo").textContent = "· not available"; }
+}
+$("tlsw").addEventListener("change", async () => {
+  TLS.busy = true; const want = $("tlsw").checked;
+  try { await cmd(want ? "tl on" : "tl off"); toast(want ? "Timelapse on: it records the next job" : "Timelapse off"); }
+  catch (e) { toast("Timelapse: " + e.message, true); $("tlsw").checked = !want; }
+  TLS.busy = false; tlPoll();
+});
 setInterval(() => {
   $("camrow").hidden = !CAM.avail; $("camsw").checked = CAM.open;
   if (!CAM.probed || (!CAM.avail && Date.now() - CAM.probed > 30000)) camProbe();
+  if (CAM.open && CAM.avail && Date.now() - TLS.t > 3000) tlPoll();
 }, 1000);
 // ---------- X Move (manual tilt, a test tool): "xmove DEG", 0-140, printer idle only ----------
 const XM = {open: false, sel: "c", val: null, busy: false};
@@ -3438,8 +3487,9 @@ function featRows() {
   if (H) {
     heating.push({key: "pre", name: "Pre-heat", on: !!H.pre, val: `${H.tpre} °C` + (H.state === 3 ? " · heating" : ""),
       dis: H.printing && !H.pre ? "Pre-heat is not possible while printing" : "", open: () => heatOpen(true),
-      note: H.zopt !== undefined ? {label: "Plate into the resin", on: !!H.zopt, dis: "",
-        go: () => featSend("Plate", [hl(H.pre, H.hp, H.zopt ? 0 : 1)], "Plate move " + (H.zopt ? "off" : "on"))} : null,
+      note: H.mix !== undefined ? {label: "Resin mixing", on: !!H.mix, dis: !H.mix && H.printing ? "Mixing is not possible while printing" : !H.mix && H.zmove ? "The plate is moving" : "",
+        go: () => { const min = Math.max(1, Math.floor(+$("hmin").value) || 10);
+          featSend("Resin mixing", [H.mix ? "mix 0" : `mix ${min}`], H.mix ? "Mixing stopped" : `Mixing for ${min} min`); }} : null,
       go: () => featSend("Pre-heat", [hl(H.pre ? 0 : 1, H.hp)], "Pre-heat " + (H.pre ? "off" : "on"))});
     heating.push({key: "hp", name: "Heating during print", on: !!H.hp, val: `${H.tprint} °C`, open: () => heatOpen(true),
       note: W ? {label: "Wait & heat", on: !!W.wh, dis: !H.hp ? "Switch heating during print on to change this" : !W.heat_ok ? "Heating control is not available" : "",
@@ -3870,18 +3920,6 @@ function renderFiles() {
 }
 
 const prefix = f => stores.find(s => s.src === f.src).pre;
-// after "plateup": wait until the plate move (live.json heat.zmove) is over; a stopped move is an error
-function plateUpWait() {
-  return new Promise((res, rej) => {
-    const t0 = Date.now(), tick = () => {
-      const H = heat();
-      if (H && !H.zmove) return /^stopped/.test(H.zmsg || "") ? rej(new Error(H.zmsg)) : res();
-      if (Date.now() - t0 > 150000) return rej(new Error("the plate did not arrive in time"));
-      setTimeout(tick, 500);
-    };
-    setTimeout(tick, 800);
-  });
-}
 $("flist").addEventListener("click", async e => {
   const b = e.target.closest("button[data-act]"); if (!b) return;
   const f = files[+b.dataset.i];
@@ -3897,7 +3935,6 @@ $("flist").addEventListener("click", async e => {
     loadFiles();
   } else {
     const pfs = pfOn() ? profAll() : [], stem = stemOf(f.name), cur = PF.links[stem], has = pfs.some(p => p.name === cur);
-    const H0 = heat(), lift = !!(H0 && H0.pre && H0.zopt);          // pre-heat on + Plate into the resin: the plate goes up to 50 mm before the job
     const pick = !pfs.length ? "" : `<div class="pfpick"><label class="label" for="pfsel">Settings profile</label>
       <select id="pfsel" class="dfield"><option value="">Keep the settings as they are now</option>` +
       pfs.map(p => `<option value="${esc(p.name)}"${has && p.name === cur ? " selected" : ""}>${esc(p.name)}${p.name === cur ? "  (used last time for this file)" : ""}</option>`).join("") +
@@ -3912,17 +3949,13 @@ $("flist").addEventListener("click", async e => {
     if (!await ask({title: "Start print?",
         body: `<img class="dthumb" src="${thumbUrl(f)}" alt="" onerror="this.remove()"><b>${esc(f.name)}</b><br>The printer starts right away. Reminder:`,
         notes: ["Resin in the vat, enough for this print", "Build plate clean and mounted tight",
-                "Vat clean, release film intact, lid closed"].concat(lift ? ["Plate into the resin is on: the plate rises to 50 mm first"] : []), ok: "Start print",
+                "Vat clean, release film intact, lid closed"], ok: "Start print",
         init: pfs.length ? () => { $("dchecks").insertAdjacentHTML("beforeend", pick); $("pfsel").addEventListener("change", pfUpd); pfUpd(); } : null})) return;
     const prof = pfs.length ? $("pfsel").value : "", rem = pfs.length && !$("pfremrow").hidden && $("pfrem").checked;
     try {
       if (curStatus() !== 0) throw new Error("the printer is not idle");
       if (prof) {                                          // the profile first; if it cannot be applied the print does not start
         try { await cmd(profCmd("restore", prof)); } catch (err) { throw new Error(`profile ${prof}: ${err.message}`); }
-      }
-      if (lift) {                                           // the plate out of the resin first; if it cannot be raised the print does not start
-        toast("Raising the plate to 50 mm…");
-        try { await cmd("plateup"); await plateUpWait(); } catch (err) { throw new Error("plate: " + err.message); }
       }
       if (rem) { try { await helper("/api/fprof", stem + "\n" + prof); } catch (err) { toast("Profile link not saved: " + err.message, true); } }
       await sdcpAck(128, {Filename: prefix(f) + f.name, StartLayer: 0}); toast(`Print started: ${f.name}` + (prof ? ` · profile ${prof}` : ""));
@@ -4157,6 +4190,7 @@ $("pstop").addEventListener("click", async () => {
 
 // ---------- print job history (job logs of the logger in sglog/) ----------
 const HIST = {rows: [], sel: new Set(), shown: 8};
+const ICON_FILM = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 5v14M17 5v14M3 12h4M17 12h4M3 8.5h4M17 8.5h4M3 15.5h4M17 15.5h4"/></svg>';
 const HNAME = /^(?:(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})|boot\d+)_(.+)\.csv$/;
 // the job log name of a print file, as sglog.c makes it: every byte outside A-Z a-z 0-9 . - becomes "_" (no collapsing)
 const hStem = n => Array.from(new TextEncoder().encode(n.replace(/\.[^.]+$/, "")), c => /[A-Za-z0-9.-]/.test(String.fromCharCode(c)) ? String.fromCharCode(c) : "_").join("");
@@ -4166,11 +4200,12 @@ const hRun = r => !!(L && L.job && L.job.active && L.job.csv === r.name);
 
 async function loadHistory() {
   try {
-    const all = (await listDir(SGLOG)).filter(f => f.size >= 0 && HNAME.test(f.name));
+    const dir = await listDir(SGLOG), all = dir.filter(f => f.size >= 0 && HNAME.test(f.name));
+    const tlf = new Map(dir.filter(f => f.size > 0 && /\.h264$/.test(f.name)).map(f => [f.name, f.size]));
     const old = new Map(HIST.rows.map(r => [r.name, r]));
     HIST.rows = all.map(f => {
       const m = f.name.match(HNAME), prev = old.get(f.name);
-      return {name: f.name, size: f.size, mtime: f.mtime, stem: m[7], meta: prev && prev.size === f.size ? prev.meta : undefined,
+      return {name: f.name, size: f.size, mtime: f.mtime, stem: m[7], tl: tlf.get(f.name.replace(/\.csv$/, ".h264")) || 0, meta: prev && prev.size === f.size ? prev.meta : undefined,
         date: m[1] ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]) / 1000 : 0};
     }).sort((a, b) => (!!a.date !== !!b.date) ? (a.date ? 1 : -1) : a.date ? b.date - a.date : b.mtime - a.mtime);
     for (const n of [...HIST.sel]) if (!HIST.rows.some(r => r.name === n)) HIST.sel.delete(n);
@@ -4211,7 +4246,7 @@ function renderHistory() {
       ${pf ? `<img class="th" loading="lazy" alt="" src="${thumbUrl(pf)}" onerror="this.className='th blank';this.removeAttribute('src')">` : `<div class="th blank"></div>`}
       <div style="min-width: 0"><div class="fn" title="${esc(r.name)}">${esc(nm)}${run ? '<span class="pill">printing</span>' : ""}</div>
         <div class="sub">${bits.join(" · ")}</div></div>
-      <div class="fa"><a class="ib" href="${SGLOG + encodeURIComponent(r.name)}" download="${esc(r.name)}" title="${run ? "Download what is recorded so far" : "Download this log (CSV)"}">${ICON.dl}</a></div></li>`;
+      <div class="fa">${r.tl ? `<a class="ib" href="${SGLOG + encodeURIComponent(r.name.replace(/\.csv$/, ".h264"))}" download="${esc(r.name.replace(/\.csv$/, ".h264"))}" title="Download the timelapse (${fmtSize(r.tl)}, H.264: make the video on your PC with ffmpeg -framerate 30 -i FILE.h264 -c copy FILE.mp4)" aria-label="Download the timelapse of ${esc(nm)}">${ICON_FILM}</a>` : ""}<a class="ib" href="${SGLOG + encodeURIComponent(r.name)}" download="${esc(r.name)}" title="${run ? "Download what is recorded so far" : "Download this log (CSV)"}">${ICON.dl}</a></div></li>`;
   }).join("") : `<li class="empty">No job logs on the printer yet.</li>`;
   $("hmore").hidden = rows.length <= HIST.shown;
   $("hmore").textContent = `Show ${Math.min(8, rows.length - HIST.shown)} more`;

@@ -846,6 +846,92 @@ static void finish_wait(uintptr_t P, uint64_t now_ms)
     wc.active = 0;
 }
 
+/* ---- TIMELAPSE trigger: in each wait the app starts (plate at rest after the retract) one datagram "T <layer> <job base>" goes to
+ * sgcam (127.0.0.1:8092), which takes one camera picture in a low-priority child process. Nothing here waits for it: a non-blocking sendto.
+ * The switch (file <csvdir>/TIMELAPSE, command "tl on|off") is read once at the start of a job (the first wait with a new job log). Pictures only while
+ * the plate is above TL_MIN_Z (machine coordinate: the user wants the timelapse to start from Z > 45 mm). */
+#define TL_FLAG  "TIMELAPSE"
+#define TL_MIN_Z 45.0
+#define TL_PORT  8092
+static double zm_now_mm(int *ok);
+static char tl_job[256];
+static int tl_on, tl_sock = -1;
+static double tl_minz = TL_MIN_Z;
+
+static void sgtl_trigger(void)
+{
+    char flag[160], msg[300];
+    const char *b;
+    size_t bl;
+    int ok = 0, n;
+    double z;
+    if (!s_active || !txt_name[0])
+        return;
+    if (strcmp(tl_job, txt_name) != 0) {
+        snprintf(tl_job, sizeof tl_job, "%s", txt_name);
+        snprintf(flag, sizeof flag, "%s/%s", sg_csvdir, TL_FLAG);
+        tl_on = access(flag, F_OK) == 0;
+        /* optional <csvdir>/TLMINZ = whole mm (e.g. -1000 = from layer 0, for tests); no file = TL_MIN_Z */
+        tl_minz = TL_MIN_Z;
+        snprintf(flag, sizeof flag, "%s/TLMINZ", sg_csvdir);
+        {
+            int fd = real_open(flag, O_RDONLY | O_CLOEXEC);
+            if (fd >= 0) {
+                char buf[16];
+                ssize_t r = read(fd, buf, sizeof buf - 1);
+                real_close(fd);
+                if (r > 0) {
+                    int i = 0, neg = 0, v = 0, dig = 0;
+                    buf[r] = 0;
+                    if (buf[i] == '-') { neg = 1; i++; }
+                    for (; buf[i] >= '0' && buf[i] <= '9'; i++) { v = v * 10 + (buf[i] - '0'); dig++; }
+                    if (dig)
+                        tl_minz = neg ? -v : v;
+                }
+            }
+        }
+    }
+    if (!tl_on)
+        return;
+    z = zm_now_mm(&ok);
+    if (!ok || z <= tl_minz)
+        return;
+    b = strrchr(txt_name, '/');
+    b = b ? b + 1 : txt_name;
+    bl = strlen(b);
+    if (bl > 4 && strcmp(b + bl - 4, ".txt") == 0)
+        bl -= 4;
+    n = snprintf(msg, sizeof msg, "T %d %.*s", s_layer, (int)bl, b);
+    if (tl_sock < 0)
+        tl_sock = socket(AF_INET, SOCK_DGRAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
+    if (tl_sock >= 0) {
+        struct sockaddr_in a;
+        memset(&a, 0, sizeof a);
+        a.sin_family = AF_INET;
+        a.sin_port = htons(TL_PORT);
+        a.sin_addr.s_addr = htonl(0x7f000001u);
+        (void)sendto(tl_sock, msg, (size_t)n, MSG_DONTWAIT, (struct sockaddr *)&a, sizeof a);
+    }
+}
+
+/* "tl on|off" */
+static void sgtl_cmd(const char *c, char *res, size_t len)
+{
+    char path[160];
+    int fd;
+    snprintf(path, sizeof path, "%s/%s", sg_csvdir, TL_FLAG);
+    if (strncmp(c, "on", 2) == 0) {
+        if ((fd = real_open(path, O_WRONLY | O_CREAT | O_CLOEXEC, 0644)) >= 0)
+            real_close(fd);
+        else
+            snprintf(res, len, "error: timelapse flag not written");
+    } else if (strncmp(c, "off", 3) == 0) {
+        unlink(path);
+    } else {
+        snprintf(res, len, "error: bad tl command");
+    }
+}
+
 static void *wait_thread(void *arg)
 {
     struct timespec next;
@@ -868,6 +954,7 @@ static void *wait_thread(void *arg)
             if (!wc.active && st == 2 && t0 != w_last_t0 && t0 <= now_ms && now_ms - t0 < 3000) {
                 w_last_t0 = t0;
                 begin_wait(P, t0, now_ms);
+                sgtl_trigger();
             }
             if (wc.active)
                 step_wait(P, now_ms);
