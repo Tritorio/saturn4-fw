@@ -58,6 +58,12 @@ filesystem stay stock. More: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 ## Requirements
 
 * A Saturn 4 Ultra 16K running **V1.5.9** (other versions are not supported: the guards refuse).
+* **The image must be built from YOUR printer's own firmware.** The Saturn 4 Ultra 16K exists in several board
+  revisions that ship slightly different firmware (different app build, FPGA bitstream, Wi-Fi/camera/driver
+  details). The mod patches the app at fixed addresses, so a build made from one revision's firmware is not valid
+  for another. Check your printer's firmware version and board first (run the read-only report in
+  [`board-report/`](board-report/)); if it is not the V1.5.9 listed here, the mod has to be re-created from your
+  printer's firmware before it can be used.
 * Linux or WSL2 (developed on Ubuntu 26.04 under WSL2), with `arm-linux-gnueabihf-gcc`, `fakeroot`, `mtd-utils`
   (`mkfs.ubifs`), Python 3 (`tools/setup_env.sh` checks and installs everything).
 * The official firmware package from Elegoo (`ChituUpgrade.bin`, md5 `2fa5c763a49e565b963ec0cf87704762`).
@@ -106,6 +112,11 @@ points to the same file. Reverse-engineering notes (what every part of the app d
 dashboard page and test it with a mocked `live.json` (see `CLAUDE.md`).
 
 ## Other board revisions
+
+**This is not only a 12K question.** The 16K itself comes in different board versions with slightly different
+firmwares. That is why a custom firmware must be created from the specific printer's firmware version: this
+repository's guards (exact machine-code checks of V1.5.9) deliberately refuse to run on anything else, and an image
+built for one revision must not be flashed on another.
 
 **Saturn 4 Ultra with the 12K display (no integrated resin heater):** this mod was developed and tested on the 16K
 model only, but it could be applied to the 12K model too. That is **untested**: the heating features (resin pre-heat,
