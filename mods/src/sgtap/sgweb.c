@@ -45,6 +45,7 @@ static int sgtilt_json(char *buf, size_t len);
 static int sgexpo_json(char *buf, size_t len);
 static int sgzmon_json(char *buf, size_t len);
 static void sgexpo_cmd(const char *c, char *res, size_t len);
+static void sgexpo_resin_cmd(const char *c, char *res, size_t len);
 static void sgtilt_cmd(const char *c, char *res, size_t len);
 static int sgtilt_queue(const double v[13], char *res, size_t len);
 static int sgtilt_read(double v[13]);
@@ -367,6 +368,8 @@ static void run_cmd(const char *id, char *c)
         sgwait_min2_cmd(c + 9, cmd_res, sizeof cmd_res);
     } else if (strncmp(c, "waitov ", 7) == 0) {
         sgwait_ov_cmd(c + 7, cmd_res, sizeof cmd_res);
+    } else if (strncmp(c, "resin ", 6) == 0) {
+        sgexpo_resin_cmd(c + 6, cmd_res, sizeof cmd_res);
     } else if (strncmp(c, "expo ", 5) == 0) {
         sgexpo_cmd(c + 5, cmd_res, sizeof cmd_res);
     } else if (strncmp(c, "wait ", 5) == 0) {

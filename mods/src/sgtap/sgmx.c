@@ -562,6 +562,10 @@ static void sgmx_cmd(const char *c, char *res, size_t len)
             snprintf(res, len, "error: Manual Exposure is on: switch it off first");
             return;
         }
+        if (rp.name[0]) {
+            snprintf(res, len, "error: a resin profile is selected: switch it off first");
+            return;
+        }
         if (spi_fd < 0 || dsp_sqrun || dsp_on) {
             snprintf(res, len, "error: no board link (or a display test is running)");
             return;

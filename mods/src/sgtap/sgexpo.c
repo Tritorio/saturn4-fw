@@ -34,7 +34,6 @@ static const struct { uint32_t a, w; } e_sig[] = {
 };
 
 static int e_ok;                                      /* code verified */
-static int sgmx_active(void);                         /* sgmx.c (stand-in in sgnoaa.c) */
 static pthread_mutex_t elock = PTHREAD_MUTEX_INITIALIZER;
 static struct { int bon, non; float b, n; } eset;      /* the override in force (ms), under elock */
 static struct {                                        /* shown / logged, under elock */
@@ -58,8 +57,147 @@ static struct {
     int idle_n;
 } ex;
 
+
+/* ---- RESIN PROFILES: a named table "layer thickness (um) -> bottom / normal exposure (ms)" in
+ * <csvdir>/resins/NAME.txt, one line "um bottom_ms normal_ms" each. The selected name is in <csvdir>/RESIN (command "resin NAME|off").
+ * In e_latch, when no Manual Exposure override is set, the thickness of the layer (its target Z P+0x220 minus the one of the layer
+ * before; the first layer: minus the Z zero) picks the nearest row (within 1 um) and its time is written like a manual override; a layer
+ * without a row keeps the file's time and is counted in rp.miss. Variable layer heights are followed layer by layer. Ends with the job. */
+#define RP_ROWS 16
+#define RP_MISS 8
+static int sgmx_active(void);                         /* sgmx.c (stand-in in sgnoaa.c) */
+static int zm_zero_mm(double *zero);                  /* sgzmon.c */
+static struct {
+    char name[40];                                    /* selected profile ("" = none) */
+    int n, err;                                       /* rows loaded, 1 = file missing / empty */
+    struct { int um; float b, n; } row[RP_ROWS];
+    int cnt[RP_ROWS];                                 /* layers of this job per row */
+    struct { int um, cnt; } miss[RP_MISS];
+    int nmiss;
+    int th, rowi;                                     /* the current layer: thickness (um, 0 = unknown) and row (-1 none) */
+    int counted;                                      /* last layer counted */
+    int cur_layer, prev_layer;                        /* thickness tracking: layer numbers latched */
+    double cur_zt, prev_zt;
+} rp = {.cur_layer = -1, .prev_layer = -1, .counted = -1, .rowi = -1};
+
+static int rp_name_ok(const char *n)
+{
+    size_t l = strlen(n);
+    if (l < 1 || l > 32 || n[0] == '.')
+        return 0;
+    for (size_t i = 0; i < l; i++)
+        if (!((n[i] >= 'A' && n[i] <= 'Z') || (n[i] >= 'a' && n[i] <= 'z') || (n[i] >= '0' && n[i] <= '9') ||
+              n[i] == '_' || n[i] == '.' || n[i] == '-' || n[i] == ' '))
+            return 0;
+    return 1;
+}
+
+static void rp_load(void)                             /* elock held or at init */
+{
+    char path[200], buf[1024];
+    int fd;
+    ssize_t r;
+    rp.n = 0;
+    rp.err = 0;
+    if (!rp.name[0])
+        return;
+    snprintf(path, sizeof path, "%s/resins/%s.txt", sg_csvdir, rp.name);
+    fd = real_open(path, O_RDONLY | O_CLOEXEC);
+    r = fd >= 0 ? read(fd, buf, sizeof buf - 1) : -1;
+    if (fd >= 0)
+        real_close(fd);
+    if (r <= 0) {
+        rp.err = 1;
+        return;
+    }
+    buf[r] = 0;
+    for (const char *q = buf; *q && rp.n < RP_ROWS;) {
+        long v[3] = {0, 0, 0};
+        int k = 0;
+        while (*q && *q != '\n') {
+            if (*q >= '0' && *q <= '9') {
+                long x = 0;
+                while (*q >= '0' && *q <= '9' && x < 10000000)
+                    x = x * 10 + (*q++ - '0');
+                if (k < 3)
+                    v[k] = x;
+                k++;
+            } else {
+                q++;
+            }
+        }
+        if (*q == '\n')
+            q++;
+        if (k == 3 && v[0] >= 1 && v[0] <= 2000 && v[1] <= (long)E_MAXMS && v[2] <= (long)E_MAXMS) {
+            rp.row[rp.n].um = (int)v[0];
+            rp.row[rp.n].b = (float)v[1];
+            rp.row[rp.n].n = (float)v[2];
+            rp.n++;
+        }
+    }
+    if (!rp.n)
+        rp.err = 1;
+}
+
+static void rp_reset_job(void)                        /* elock held */
+{
+    memset(rp.cnt, 0, sizeof rp.cnt);
+    rp.nmiss = 0;
+    rp.th = 0;
+    rp.rowi = -1;
+    rp.counted = -1;
+    rp.cur_layer = rp.prev_layer = -1;
+}
+
+static void rp_track(uintptr_t P, int layer)          /* thickness of this layer into rp.th */
+{
+    double zt = HF(P + 0x220), th = 0, zero = 0;
+    if (layer != rp.cur_layer) {                      /* a new layer (a resumed wait of the same layer keeps the values) */
+        rp.prev_layer = rp.cur_layer;
+        rp.prev_zt = rp.cur_zt;
+        rp.cur_layer = layer;
+        rp.cur_zt = zt;
+    }
+    if (zt > 0 && rp.prev_layer == layer - 1 && rp.prev_zt > 0)
+        th = zt - rp.prev_zt;
+    else if (zt > 0 && layer == 0 && zm_zero_mm(&zero))
+        th = zt - zero;
+    rp.th = th > 0.001 && th < 1.0 ? (int)(th * 1000.0 + 0.5) : 0;
+}
+
+static void rp_pick(void)                             /* rp.th -> rp.rowi, counters */
+{
+    int best = -1, bd = 2;
+    for (int i = 0; i < rp.n; i++) {
+        int d = rp.row[i].um > rp.th ? rp.row[i].um - rp.th : rp.th - rp.row[i].um;
+        if (d < bd) {
+            bd = d;
+            best = i;
+        }
+    }
+    rp.rowi = rp.th ? best : -1;
+    if (rp.counted == rp.cur_layer || !rp.th)
+        return;
+    rp.counted = rp.cur_layer;
+    if (best >= 0) {
+        rp.cnt[best]++;
+        return;
+    }
+    for (int i = 0; i < rp.nmiss; i++)
+        if (rp.miss[i].um == rp.th) {
+            rp.miss[i].cnt++;
+            return;
+        }
+    if (rp.nmiss < RP_MISS) {
+        rp.miss[rp.nmiss].um = rp.th;
+        rp.miss[rp.nmiss].cnt = 1;
+        rp.nmiss++;
+    }
+}
+
 static void e_reset_job(void)                         /* elock held */
 {
+    rp_reset_job();
     memset(&eset, 0, sizeof eset);
     estat.job = estat.layer = 0;
     estat.layer = -1;
@@ -149,6 +287,7 @@ static void e_latch(uintptr_t P)
         float he, hb;
         int nl;
         estat.job = 1;
+        rp_load();                                           /* the profile file may have been edited since */
         if (e_find_file(P, &he, &hb, &nl)) {
             estat.hb = hb;
             estat.hn = he;
@@ -169,7 +308,29 @@ static void e_latch(uintptr_t P)
     non = eset.non;
     b = eset.b;
     n = eset.n;
-    if (mode_ok && (bon || non)) {
+    rp.th = 0;
+    rp.rowi = -1;
+    if (rp.n > 0 && mode_ok) {
+        rp_track(P, layer);
+        if (!(bon || non))
+            rp_pick();
+    }
+    if (mode_ok && !(bon || non) && rp.n > 0 && rp.rowi >= 0) {   /* resin profile row of this layer's thickness */
+        float rb = rp.row[rp.rowi].b, rn = rp.row[rp.rowi].n;
+        if (cls == 0)
+            target = rb;
+        else if (cls == 2)
+            target = rn;
+        else if (estat.heap_ok) {
+            float fb = estat.hb, fn = estat.hn;
+            if (fn - fb > 1.0f || fb - fn > 1.0f)
+                target = rb + (orig - fb) * (rn - rb) / (fn - fb);
+        }
+        if (target > (float)E_MAXMS)
+            target = (float)E_MAXMS;
+        if (target < 0 && target != -1)
+            target = 0;
+    } else if (mode_ok && (bon || non)) {
         if (cls == 0 && bon)
             target = b;
         else if (cls == 2 && non)
@@ -280,6 +441,24 @@ static void sgexpo_init(void)
             return;
     pthread_mutex_lock(&elock);
     e_reset_job();
+    {
+        char path[160], nm[40];
+        int fd;
+        ssize_t r;
+        snprintf(path, sizeof path, "%s/RESIN", sg_csvdir);
+        fd = real_open(path, O_RDONLY | O_CLOEXEC);
+        r = fd >= 0 ? read(fd, nm, sizeof nm - 1) : -1;
+        if (fd >= 0)
+            real_close(fd);
+        if (r > 0) {
+            nm[r] = 0;
+            nm[strcspn(nm, "\r\n")] = 0;
+            if (rp_name_ok(nm)) {
+                snprintf(rp.name, sizeof rp.name, "%s", nm);
+                rp_load();
+            }
+        }
+    }
     pthread_mutex_unlock(&elock);
     ex.last_layer = -1;
     ex.file = ex.set = -1;
@@ -335,6 +514,50 @@ static void sgexpo_cmd(const char *c, char *res, size_t len)
     pthread_mutex_unlock(&elock);
 }
 
+/* "resin NAME" | "resin off": select the resin profile (saved in <csvdir>/RESIN; the file is read again at each job start) */
+static void sgexpo_resin_cmd(const char *c, char *res, size_t len)
+{
+    char name[40], path[160];
+    size_t l;
+    int fd;
+    while (*c == ' ')
+        c++;
+    l = strcspn(c, "\r\n");
+    if (l >= sizeof name) {
+        snprintf(res, len, "error: bad profile name");
+        return;
+    }
+    memcpy(name, c, l);
+    name[l] = 0;
+    if (!e_ok) {
+        snprintf(res, len, "error: exposure times not available");
+        return;
+    }
+    if (strcmp(name, "off") == 0)
+        name[0] = 0;
+    else if (!rp_name_ok(name)) {
+        snprintf(res, len, "error: bad profile name");
+        return;
+    }
+    if (name[0] && sgmx_active()) {
+        snprintf(res, len, "error: Multi Exposure is on: switch it off first");
+        return;
+    }
+    pthread_mutex_lock(&elock);
+    snprintf(rp.name, sizeof rp.name, "%s", name);
+    rp_load();
+    pthread_mutex_unlock(&elock);
+    if (name[0] && rp.err) {
+        snprintf(res, len, "error: profile has no valid rows");
+    }
+    snprintf(path, sizeof path, "%s/RESIN", sg_csvdir);
+    fd = real_open(path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
+    if (fd >= 0) {
+        if (name[0] && write(fd, name, strlen(name)) < 0) {}
+        real_close(fd);
+    }
+}
+
 /* ",expo_file,expo_set,expo_used" for the CSV row: once per finished exposure (s) */
 static void sgexpo_csv(char *buf, size_t len)
 {
@@ -365,8 +588,17 @@ static int sgexpo_json(char *buf, size_t len)
     for (int i = 0; i < estat.nruns && n < (int)len; i++)
         n += snprintf(buf + n, len - (size_t)n, "%s[%d,%d,%.0f,%.0f,%.0f]", i ? "," : "", estat.runs[i].l0, estat.runs[i].l1,
                       estat.runs[i].file, estat.runs[i].set, estat.runs[i].used / estat.runs[i].n);
+    if (n < (int)len)
+        n += snprintf(buf + n, len - (size_t)n, "],\"rp\":{\"name\":\"%s\",\"n\":%d,\"err\":%d,\"th\":%d,\"row\":%d,\"cnt\":[",
+                      rp.name, rp.n, rp.err, rp.th, rp.rowi);
+    for (int i = 0; i < rp.n && n < (int)len; i++)
+        n += snprintf(buf + n, len - (size_t)n, "%s%d", i ? "," : "", rp.cnt[i]);
+    if (n < (int)len)
+        n += snprintf(buf + n, len - (size_t)n, "],\"miss\":[");
+    for (int i = 0; i < rp.nmiss && n < (int)len; i++)
+        n += snprintf(buf + n, len - (size_t)n, "%s[%d,%d]", i ? "," : "", rp.miss[i].um, rp.miss[i].cnt);
     pthread_mutex_unlock(&elock);
     if (n < (int)len)
-        n += snprintf(buf + n, len - (size_t)n, "]}");
+        n += snprintf(buf + n, len - (size_t)n, "]}}");
     return n;
 }

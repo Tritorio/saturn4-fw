@@ -430,6 +430,14 @@
   .exleg .ld { width: 14px; height: 0; border-top: 2px dashed var(--ink2); }
   .exleg .ln { width: 2px; height: 11px; background: var(--ink); }
   #exchart svg { display: block; width: 100%; height: auto; margin-top: 6px; }
+  .rpbar { display: flex; gap: 8px; align-items: flex-end; margin: 10px 0 0; }
+  .rptab { width: 100%; border-collapse: collapse; margin: 10px 0; }
+  .rptab th { font-weight: 400; color: var(--ink2); font-size: 12px; text-align: left; padding: 4px 6px; }
+  .rptab td { padding: 4px 6px; border-top: 1px solid var(--line); }
+  .rptab input { width: 100%; box-sizing: border-box; height: 32px; text-align: center; background: var(--input); color: var(--ink); border: 1px solid var(--bd3); border-radius: 8px; font: inherit; }
+  .rptab tr.cur td { background: var(--onbg); } .rptab tr.cur input { border-color: var(--gfill); }
+  .rptab .rx { background: none; border: 0; color: var(--muted); font-size: 18px; cursor: pointer; }
+  .rptab td.cn { color: var(--ink2); font-size: 12px; white-space: nowrap; text-align: right; }
   .exban { margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: var(--cbg); color: var(--exbantxt); font-size: 13px; }
   .exban b { color: var(--warn); font-weight: 500; margin-right: 8px; }
   .exfields { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
@@ -797,7 +805,8 @@
       <div id="cammsg" class="sub" style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 12px"></div>
     </div>
     <label class="hsw" style="margin-top: 12px"><span>Timelapse <span class="sub" style="font-weight: 400" id="tlinfo">· one picture per layer, for the next jobs</span></span><input type="checkbox" id="tlsw" role="switch" aria-label="Timelapse"></label>
-    <div class="tnote qnote" hidden><b>Timelapse:</b> with the switch on at the start of a job, the printer saves one camera picture per layer, taken in the wait after the retract while the plate is at rest, and only from the layer on where the plate is above Z = 45 mm. A separate low-priority program takes them: the print timing is never changed, and a layer whose picture is not ready in time is skipped. The pictures of a job are one H.264 file stored with the job log; download it with the film button in the Print job history card (make the video on your PC: ffmpeg -framerate 30 -i JOB.h264 -c copy JOB.mp4). Deleting the job log deletes the timelapse too; nothing is deleted automatically.</div>
+    <div id="tlwarn" class="sub" style="color: var(--warn); margin-top: 4px" hidden role="alert"></div>
+    <div class="tnote qnote" hidden><b>Timelapse:</b> with the switch on at the start of a job, the printer saves one camera picture per layer, taken just after the retract while the plate is at rest, and only from the layer on where the plate is above Z = 45 mm. A separate low-priority program takes them: the print timing is never changed, and a layer whose picture is not ready in time is skipped. The pictures of a job are one H.264 file in the hidden folder .timelapse on the files partition (about 200 KB per picture); download it with the film button in the Print job history card (make the video on your PC: ffmpeg -framerate 30 -i JOB.h264 -c copy JOB.mp4). The timelapses together are kept under 2 GB: when a new picture would go over, the oldest timelapse is deleted automatically and a warning shows here. Deleting a job log deletes its timelapse too.</div>
     <div class="tnote qnote" hidden>The picture is the printer's own camera, relayed by a small program on the printer (sgcam, port 8091) as a standard video stream. It starts when you open the card or switch it on and stops when you close the card, switch it off or close the page. It also runs during a print (still being tried: it adds some load on the printer, so watch the force curve and switch it off if the prints show any change). Only one viewer at a time. The camera session on the printer is always closed again. The picture is delayed by about half a second, and starts 2 to 3 seconds after opening (it waits for the next key frame). Anyone on your network can open the video address; the printer's own camera port is open to the network in the same way.</div>
   </section>
 
@@ -851,6 +860,30 @@
     <div class="cx exbtns"><button class="btn primary" id="exapply">Apply</button><button class="btn" id="exrevert">Revert to file</button></div>
     <div class="cx tnote" id="exnote">0 to 60 s. The layer that is exposing now keeps its time; the new time starts with the next layer. Transition layers are graded between your bottom and normal times. The setting ends with the job. Times set while no job is running wait for the next job and end with it.</div>
     <div class="cx tnote" id="exwarn" style="color: var(--warn)" hidden></div>
+  </section>
+
+  <section class="card" id="rpcard" hidden>
+    <div class="cal-head">
+      <div style="min-width: 0"><div class="label">Resin profiles</div><div class="status" id="rpstate">Off</div><div class="sub">Exposure times per layer thickness · follows variable layer heights</div></div>
+      <span class="dlpill" id="rppill">OFF</span>
+      <span class="hbtns"><button class="qbtn" data-q="rpcard" aria-expanded="false" aria-label="Show or hide the explanations" title="Explanations">?</button><button class="x" id="rpclose" aria-label="Close Resin profiles">×</button></span>
+    </div>
+    <div class="xmnow"><b id="rpnow">–</b><span class="sub" id="rpsub"></span></div>
+    <div class="exban" id="rpban" hidden></div>
+    <label class="hsw"><span>Use the selected profile <span class="sub" style="font-weight:400">· off = the times of the print file</span></span><input type="checkbox" id="rpsw" role="switch"></label>
+    <div class="rpbar">
+      <div style="flex: 1; min-width: 160px"><label class="label" for="rpsel">Profile</label><select id="rpsel" class="dfield"></select></div>
+      <button class="btn" id="rpnew">New</button><button class="btn danger" id="rpdel">Delete</button>
+    </div>
+    <label class="label" for="rpname" style="display: block; margin-top: 10px">Resin name</label>
+    <input id="rpname" class="dfield" maxlength="32" autocomplete="off" spellcheck="false" placeholder="e.g. Siraya Tech Fast Grey">
+    <table class="rptab" id="rptab"></table>
+    <div class="fbtns" style="justify-content: space-between; flex-wrap: wrap"><button class="btn" id="rpadd">+ Add thickness</button><span class="sub" id="rpchk" role="status"></span></div>
+    <div class="exban" id="rpmiss" hidden></div>
+    <div class="tnote qnote" data-for="rpcard" hidden>Pick a profile and switch it on: in the wait before every layer the printer works out the layer's thickness (its Z target minus the one of the layer before) and uses the row with the nearest thickness (within 0.001 mm), so variable layer heights are followed layer by layer. Bottom layers use the Bottom time, normal layers the Normal time; transition layers are graded between the two. A layer whose thickness has no row keeps the time of the file and is listed here. 0 to 60 s. A hand-set Manual Exposure takes priority; Multi Exposure excludes the profile. Ends with the job; the profile stays selected for the next job. Profiles are saved on the printer (sglog/resins).</div>
+    <div class="fbtns" style="justify-content: flex-end; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line)">
+      <button class="btn" id="rpcancel">Revert</button><button class="btn primary" id="rpsave">Save profile</button>
+    </div>
   </section>
 
   <section class="card" id="mxcard" hidden>
@@ -1513,7 +1546,7 @@
  * Writes (tare, auto-tare, calibration k, heating, dynamic wait) go to sgwebd.tcl on port 8080. */
 if (location.port !== "3030") location.replace(`http://${location.hostname}:3030/customer/mod/www/index.html`);
 const $ = id => document.getElementById(id);
-const HELPER = `http://${location.hostname}:8080`, LIVE = "/tmp/sgweb/live.json", SGLOG = "/media/mmcblk0p2/sglog/";
+const HELPER = `http://${location.hostname}:8080`, LIVE = "/tmp/sgweb/live.json", SGLOG = "/media/mmcblk0p2/sglog/", TLDIR = "/media/mmcblk0p3/.timelapse/";
 const THUMBS = "/media/mmcblk0p1/file_info/";
 const CUR = {0: "Idle", 1: "Printing", 2: "File transfer", 3: "Exposure test", 4: "Device test"};
 const PRINT = {0: "", 1: "Homing", 2: "Dropping", 3: "Exposing", 4: "Lifting", 5: "Pausing",
@@ -1710,7 +1743,7 @@ function render() {
   dlRender();
   xmRender();
   zmRender();
-  exRender();
+  exRender(); rpRender();
   mxRender();
   fxRender();
   alertsCheck();
@@ -2003,13 +2036,13 @@ async function authPoll() {
 // Draft edits (dial steps, number boxes) and the controls that only open a card stay usable. Not covered: the app's own
 // print control, file delete and upload (SDCP on :3030).
 const WRITE_SEL = ["#tare", "#auto", "label:has(#auto)", "#heatapply", "#dwapply", "#dwm2", "#dwn", "#uapply", "#setsave", "#setrestore", "#setdef",
-  "#dlon", "label:has(#dlon)", "#dlapply", "#dlreset", "#xmminus", "#xmplus", "#xmgo", '[data-xm]:not([data-xm="c"])', "#exapply", "#exrevert", "#exsw", "label:has(#exsw)", "#mxsw", "label:has(#mxsw)", "#mxfrom", "#mxfromm", "#mxfromp", "#jlsw", "label:has(#jlsw)", "#mxstate", "#qmap input", "#qmap button", "#dwstate", "#hstate", "#gsstate", "#dlstate", "#exstate", "#fxstate", "#tcstate",
+  "#dlon", "label:has(#dlon)", "#dlapply", "#dlreset", "#xmminus", "#xmplus", "#xmgo", '[data-xm]:not([data-xm="c"])', "#exapply", "#exrevert", "#exsw", "#rpsw", "label:has(#rpsw)", "#rpsave", "#rpnew", "#rpdel", "#rpadd", "#rpcancel", "label:has(#exsw)", "#mxsw", "label:has(#mxsw)", "#mxfrom", "#mxfromm", "#mxfromp", "#jlsw", "label:has(#jlsw)", "#mxstate", "#qmap input", "#qmap button", "#dwstate", "#hstate", "#gsstate", "#dlstate", "#exstate", "#fxstate", "#tcstate",
   "#fxsw", "#fxoff", "#fxon", "#slapply", "#tapply", "#tcon", "label:has(#tcon)", "#gsapply", "#gssearch", "#slbeep", "label:has(#slbeep)", "#slbtest",
   "#slsave", "#sldel", "#hdel", "#mapply", "#calopen", "#calapply", "#logall", "#pwchange", "#stockrestore",
   "#plist button[data-pa]", "#mbaks button[data-restore]", "#mbaks button[data-delbak]", "#tlsw", "#featlist [data-sw]", "#featlist [data-note]", "#featlist label.fnote"].join(",");
 // The cards made for writing are greyed as a whole while logged out, except their graphs (canvas / svg role="img"): a block of the card
 // that holds no graph is greyed, the graph and the path to it stay. The other controls (Force card, Features list) are greyed one by one.
-const WRITE_CARDS = "#xmcard, #excard, #mxcard, #fxcard, #heatcard, #dwcard, #gscard, #dlcard, #tiltcard, #slsetcard, #slowcard, #setcard, #machcard";
+const WRITE_CARDS = "#xmcard, #excard, #rpcard, #mxcard, #fxcard, #heatcard, #dwcard, #gscard, #dlcard, #tiltcard, #slsetcard, #slowcard, #setcard, #machcard";
 const GFX = 'canvas, svg[role="img"]', GREY = "opacity: .45; filter: grayscale(.8);";
 document.head.insertAdjacentHTML("beforeend", `<style>
   body.out :is(${WRITE_SEL}):not(:is(${WRITE_CARDS}) *) { opacity: .45; cursor: default; }
@@ -2953,8 +2986,13 @@ async function tlPoll() {
     TLS.last = j;
     if (!TLS.busy) $("tlsw").checked = !!j.on;
     const act = L && L.job && L.job.active && j.job && L.job.csv && L.job.csv.replace(/\.csv$/, "") === j.job;
+    const lim = j.limit_mb ? ` · timelapses ${fmtSize(j.total_mb * 1048576)} of ${fmtSize(j.limit_mb * 1048576)}` : "";
     $("tlinfo").textContent = act ? `· recording: ${j.frames} pictures${j.skipped ? `, ${j.skipped} skipped` : ""}${j.failed ? `, ${j.failed} failed` : ""} · ${fmtSize(j.bytes)}` +
       (j.free_mb >= 0 ? ` · ${fmtSize(j.free_mb * 1048576)} free` : "") : "· one picture per layer, for the next jobs" + (j.free_mb >= 0 ? ` · ${fmtSize(j.free_mb * 1048576)} free` : "");
+    $("tlinfo").textContent += lim;
+    const tw = $("tlwarn");
+    tw.hidden = !j.deleted;
+    if (j.deleted) tw.textContent = `⚠ Timelapse limit ${fmtSize(j.limit_mb * 1048576)} reached: the oldest timelapse${j.deleted > 1 ? "s were" : " was"} deleted (${j.deleted}, last: ${j.last_deleted})`;
   } catch (e) { $("tlinfo").textContent = "· not available"; }
 }
 $("tlsw").addEventListener("change", async () => {
@@ -3123,6 +3161,120 @@ for (const [id, k, d] of [["exbv", "b", "bd"], ["exnv", "n", "nd"]])
 $("exbm").addEventListener("click", () => exStep("b", -1)); $("exbp").addEventListener("click", () => exStep("b", 1));
 $("exnm").addEventListener("click", () => exStep("n", -1)); $("exnp").addEventListener("click", () => exStep("n", 1));
 $("exapply").addEventListener("click", exApply); $("exrevert").addEventListener("click", exRevert);
+
+// ---------- resin profiles: sglog/resins/<name>.txt, lines "um bottom_ms normal_ms"; saved by sgwebd /api/resin, selected with "resin NAME|off" ----------
+const RDIR = SGLOG + "resins/";
+const RP = {open: false, list: [], name: "", rows: [], dirty: false, isnew: false, busy: false};
+const rpParse = t => t.split("\n").map(l => l.trim().split(/\s+/).map(Number)).filter(a => a.length === 3 && a.every(isFinite))
+  .map(a => ({t: (a[0] / 1000).toFixed(3), b: +(a[1] / 1000).toFixed(2) + "", n: +(a[2] / 1000).toFixed(2) + ""}));
+const rpAct = () => { const R = L && L.expo && L.expo.rp; return R ? R.name : ""; };
+async function loadResins() {
+  const list = []; let items = [];
+  try { items = await listDir(RDIR); } catch (e) { items = []; }              // the folder does not exist before the first save
+  for (const f of items) {
+    if (f.size < 0 || !/\.txt$/i.test(f.name)) continue;
+    try { const r = await fetch(RDIR + encodeURIComponent(f.name) + "?m=" + f.mtime, {cache: "no-store"}); if (r.ok) list.push({name: f.name.slice(0, -4), rows: rpParse(await r.text())}); } catch (e) {}
+  }
+  RP.list = list.sort((a, b) => a.name.localeCompare(b.name));
+  if (!RP.isnew && !RP.list.some(p => p.name === RP.name)) rpPick(rpAct() && RP.list.some(p => p.name === rpAct()) ? rpAct() : RP.list.length ? RP.list[0].name : "");
+  rpTable(); rpRender();
+}
+function rpPick(name) {
+  const p = RP.list.find(x => x.name === name);
+  RP.name = p ? name : ""; RP.rows = p ? p.rows.map(r => ({...r})) : [{t: "0.050", b: "", n: ""}]; RP.dirty = false; RP.isnew = !p;
+}
+function rpOpen(open) {
+  if (open && !(L && L.expo && L.expo.rp)) return toast("Resin profiles are not available (an older library)", true);
+  RP.open = open; $("rpcard").hidden = !open;
+  if (open) { RP.isnew = false; loadResins(); }
+}
+function rpTable() {
+  $("rptab").innerHTML = `<tr><th>Layer thickness (mm)</th><th>Bottom (s)</th><th>Normal (s)</th><th></th><th></th></tr>` + RP.rows.map((r, i) =>
+    `<tr data-i="${i}"><td style="width: 30%"><input data-k="t" inputmode="decimal" value="${esc(r.t)}" aria-label="Layer thickness in mm"></td>` +
+    `<td><input data-k="b" inputmode="decimal" value="${esc(r.b)}" aria-label="Bottom layers exposure in s"></td>` +
+    `<td><input data-k="n" inputmode="decimal" value="${esc(r.n)}" aria-label="Normal layers exposure in s"></td>` +
+    `<td class="cn" data-cn></td><td><button class="rx" data-del="${i}" aria-label="Remove this row">×</button></td></tr>`).join("");
+}
+function rpCheck() {                                   // -> {err, lines}
+  const name = $("rpname").value.trim(), seen = new Set(), lines = [];
+  if (!/^[A-Za-z0-9_.-]([A-Za-z0-9 _.-]{0,30}[A-Za-z0-9_.-])?$/.test(name) || /^(off|standard)$/i.test(name)) return {err: "give the resin a name (letters, digits, space, . _ -)"};
+  if (!RP.rows.length) return {err: "add a thickness row"};
+  for (const r of RP.rows) {
+    const um = Math.round(parseFloat(r.t) * 1000), b = Math.round(parseFloat(r.b) * 1000), n = Math.round(parseFloat(r.n) * 1000);
+    if (!(um >= 1 && um <= 2000)) return {err: "layer thickness 0.001 to 2 mm"};
+    if (![b, n].every(v => v >= 0 && v <= 60000)) return {err: "exposure times 0 to 60 s, both columns"};
+    if (seen.has(um)) return {err: `thickness ${(um / 1000).toFixed(3)} mm twice`};
+    seen.add(um); lines.push(`${um} ${b} ${n}`);
+  }
+  return {err: "", lines, name};
+}
+function rpRender() {
+  const E = L && L.expo, R = E && E.rp;
+  if (!RP.open) return;
+  if (!R) { $("rpstate").textContent = "N/A"; return; }
+  const job = !!E.job, act = R.name, manual = !!(E.bon || E.non), mx = !!(L.mx && L.mx.on);
+  $("rpstate").textContent = act || "Off"; $("rppill").textContent = act ? "ON" : "OFF"; $("rppill").className = "dlpill" + (act ? " on" : "");
+  const cur = E.cs >= 0 ? E.cs : E.cf, th = R.th;
+  $("rpnow").textContent = act && job && th ? `${(th / 1000).toFixed(3)} mm` + (R.row >= 0 ? ` → ${exFmt(cur)}` : " → no row, file time") : "–";
+  $("rpsub").textContent = !act ? "no profile in use: the times of the print file" : job ? `layer ${E.layer + 1} of ${E.total || "?"} · ${R.err ? "profile file unreadable" : R.n + " thickness" + (R.n === 1 ? "" : "es")}` : "applies from the first layer of the next job";
+  const ban = [];
+  if (manual && act) ban.push("Manual Exposure times are set: they take priority over the profile.");
+  if (mx) ban.push("Multi Exposure is on: switch it off first.");
+  if (R.err && act) ban.push("The profile file is missing or has no valid rows.");
+  $("rpban").hidden = !ban.length; $("rpban").textContent = ban.join(" ");
+  const sw = $("rpsw"); sw.checked = !!act; sw.disabled = !!(mx || RP.busy || (!act && !RP.list.some(p => p.name === RP.name)));
+  const sel = $("rpsel"), want = RP.isnew ? "\u0001new" : RP.name;
+  const opts = RP.list.map(p => `<option value="${esc(p.name)}">${esc(p.name)}${p.name === act ? "  (in use)" : ""}</option>`).join("") + (RP.isnew ? `<option value="\u0001new">(new profile)</option>` : "");
+  if (sel.dataset.h !== opts) { sel.innerHTML = opts || `<option value="">(none yet)</option>`; sel.dataset.h = opts; }
+  sel.value = want;
+  if (document.activeElement !== $("rpname")) $("rpname").value = RP.name;
+  const chk = rpCheck(), same = act && act === RP.name && !RP.dirty;
+  $("rpchk").textContent = RP.dirty && chk.err ? chk.err : "";
+  $("rpsave").disabled = !!(RP.busy || chk.err || !(RP.dirty || RP.isnew));
+  $("rpcancel").disabled = !RP.dirty && !RP.isnew;
+  $("rpdel").disabled = !!(RP.busy || RP.isnew || !RP.name);
+  for (const tr of document.querySelectorAll("#rptab tr[data-i]")) {
+    const i = +tr.dataset.i, um = Math.round(parseFloat(RP.rows[i] && RP.rows[i].t) * 1000);
+    tr.classList.toggle("cur", !!(same && job && th && Math.abs(um - th) < 2));
+    tr.querySelector("[data-cn]").textContent = same && job && R.cnt[i] != null ? R.cnt[i] + " layers" : "";
+  }
+  const miss = R.miss || [];
+  $("rpmiss").hidden = !(act && miss.length);
+  if (miss.length) $("rpmiss").innerHTML = `<b>NO ROW</b>file times used for: ` + miss.map(m => `${(m[0] / 1000).toFixed(3)} mm × ${m[1]}`).join(" · ");
+}
+async function rpDo(fn) { RP.busy = true; rpRender(); try { await fn(); } catch (e) { toast("Resin profile: " + e.message, true); } RP.busy = false; rpRender(); }
+$("rpclose").addEventListener("click", () => rpOpen(false));
+$("rpsel").addEventListener("change", () => rpDo(async () => {
+  const v = $("rpsel").value; if (v === "\u0001new") return;
+  rpPick(v); rpTable(); if (rpAct()) await cmd("resin " + v);          // while a profile is in use the picked one takes over at once
+}));
+$("rpnew").addEventListener("click", () => { RP.name = ""; RP.rows = [{t: "0.050", b: "", n: ""}]; RP.dirty = false; RP.isnew = true; rpTable(); rpRender(); $("rpname").focus(); });
+$("rpname").addEventListener("input", () => { RP.name = $("rpname").value; RP.dirty = true; RP.isnew = RP.isnew || !RP.list.some(p => p.name === RP.name); rpRender(); });
+$("rptab").addEventListener("input", e => { const tr = e.target.closest("tr[data-i]"); if (!tr || !e.target.dataset.k) return; RP.rows[+tr.dataset.i][e.target.dataset.k] = e.target.value; RP.dirty = true; rpRender(); });
+$("rptab").addEventListener("click", e => { const b = e.target.closest("[data-del]"); if (!b) return; RP.rows.splice(+b.dataset.del, 1); RP.dirty = true; rpTable(); rpRender(); });
+$("rpadd").addEventListener("click", () => { RP.rows.push({t: "", b: "", n: ""}); RP.dirty = true; rpTable(); rpRender(); });
+$("rpcancel").addEventListener("click", () => { RP.isnew = false; rpPick(RP.list.some(p => p.name === rpAct()) ? rpAct() : RP.list.length ? RP.list[0].name : ""); rpTable(); rpRender(); });
+$("rpsave").addEventListener("click", () => rpDo(async () => {
+  const c = rpCheck(); if (c.err) throw new Error(c.err);
+  if (RP.list.some(p => p.name === c.name) && !RP.isnew ? false : RP.list.some(p => p.name === c.name) && !await ask({title: "Overwrite the profile?", body: `A profile named <b>${esc(c.name)}</b> exists. Replace it?`, ok: "Replace"})) return;
+  await helper("/api/resin", c.name + "\n" + c.lines.join("\n"));
+  RP.name = c.name; RP.dirty = false; RP.isnew = false;
+  if (rpAct() === c.name) await cmd("resin " + c.name);
+  localStorage.setItem("sgresin", c.name); toast("Resin profile saved: " + c.name);
+  await loadResins();
+}));
+$("rpdel").addEventListener("click", () => rpDo(async () => {
+  const n = RP.name; if (!n) return;
+  if (!await ask({title: "Delete the resin profile?", body: `<b>${esc(n)}</b> will be deleted from the printer.`, ok: "Delete"})) return;
+  if (rpAct() === n) await cmd("resin off");
+  await helper("/api/resindel", n); toast("Resin profile deleted: " + n);
+  RP.isnew = false; RP.name = ""; await loadResins();
+}));
+$("rpsw").addEventListener("click", e => { e.preventDefault(); rpDo(async () => {
+  if (rpAct()) { await cmd("resin off"); toast("Resin profile off: the times of the file"); return; }
+  if (!RP.list.some(p => p.name === RP.name)) throw new Error("save the profile first");
+  await cmd("resin " + RP.name); localStorage.setItem("sgresin", RP.name); toast("Resin profile on: " + RP.name);
+}); });
 $("exclose").addEventListener("click", () => exOpen(false));
 
 // ---------- Multi Exposure (sgmx.c): "mx on|off", "mx set T1 T2 T3 T4 MIRX MIRY" (boxes TL TR BL BR as the card shows them) ----------
@@ -3528,6 +3680,13 @@ function featRows() {
       dis: M && M.on ? "Multi Exposure is on: switch it off first" : !E.mode ? "The app is in a different exposure mode here" : (!eon && !EX.last ? "Set the times in the Manual Exposure card first" : ""),
       go: () => featSend("Manual Exposure", [eon ? "expo off" : EX.last], eon ? "Manual exposure off: back to the file" : "Manual exposure on")});
   }
+  if (E && E.rp) {
+    const R = E.rp, pick = R.name || (RP.list.some(p => p.name === localStorage.getItem("sgresin")) ? localStorage.getItem("sgresin") : RP.list.length ? RP.list[0].name : "");
+    exrows.push({key: "rpr", name: "Resin profile", on: !!R.name, open: () => rpOpen(true),
+      val: R.name ? `${R.name} · ${R.n} thickness${R.n === 1 ? "" : "es"}` : "exposure times per layer thickness",
+      dis: M && M.on ? "Multi Exposure is on: switch it off first" : !R.name && !pick ? "Create a profile in the Resin profiles card first" : "",
+      go: () => featSend("Resin profile", [R.name ? "resin off" : "resin " + pick], R.name ? "Resin profile off: the times of the file" : "Resin profile on: " + pick)});
+  }
   if (M) {
     const man = mxMan();
     exrows.push({key: "mxe", name: "Multi Exposure", on: !!M.on && !man, open: () => mxOpen(true),
@@ -3891,7 +4050,7 @@ async function loadFiles() {
     // unknown, but the server lists a store in directory order (oldest first), so those files go first,
     // latest added on top, then the dated ones by time.
     files = all.sort((a, b) => (dated(a) !== dated(b)) ? (dated(a) ? 1 : -1) : dated(a) ? b.mtime - a.mtime : b.ord - a.ord);
-    await loadSlow(); await loadProfiles(); renderFiles(); renderHistory();
+    await loadSlow(); await loadProfiles(); loadResins(); renderFiles(); renderHistory();
   } catch (e) { $("finfo").textContent = "Could not read the file list: " + e.message; }
 }
 
@@ -3950,12 +4109,24 @@ $("flist").addEventListener("click", async e => {
         body: `<img class="dthumb" src="${thumbUrl(f)}" alt="" onerror="this.remove()"><b>${esc(f.name)}</b><br>The printer starts right away. Reminder:`,
         notes: ["Resin in the vat, enough for this print", "Build plate clean and mounted tight",
                 "Vat clean, release film intact, lid closed"], ok: "Start print",
-        init: pfs.length ? () => { $("dchecks").insertAdjacentHTML("beforeend", pick); $("pfsel").addEventListener("change", pfUpd); pfUpd(); } : null})) return;
+        init: pfs.length || RP.list.length ? () => {
+          if (pfs.length) { $("dchecks").insertAdjacentHTML("beforeend", pick); $("pfsel").addEventListener("change", pfUpd); pfUpd(); }
+          if (RP.list.length) {                                   // resin profile of this print (remembered per file in this browser)
+            const lastR = localStorage.getItem("sgresinf_" + stem), act = rpAct(), sel = lastR !== null ? lastR : act;
+            $("dchecks").insertAdjacentHTML("beforeend", `<div class="pfpick"><label class="label" for="rpdsel">Resin profile</label>
+              <select id="rpdsel" class="dfield"><option value="">None: the exposure times of the file</option>` +
+              RP.list.map(p => `<option value="${esc(p.name)}"${p.name === sel ? " selected" : ""}>${esc(p.name)}</option>`).join("") + `</select></div>`);
+          }
+        } : null})) return;
     const prof = pfs.length ? $("pfsel").value : "", rem = pfs.length && !$("pfremrow").hidden && $("pfrem").checked;
+    const rsel = RP.list.length && $("rpdsel") ? $("rpdsel").value : null;
     try {
       if (curStatus() !== 0) throw new Error("the printer is not idle");
       if (prof) {                                          // the profile first; if it cannot be applied the print does not start
         try { await cmd(profCmd("restore", prof)); } catch (err) { throw new Error(`profile ${prof}: ${err.message}`); }
+      }
+      if (rsel !== null) {                                  // the resin profile first; if it cannot be applied the print does not start
+        try { await cmd(rsel ? "resin " + rsel : "resin off"); localStorage.setItem("sgresinf_" + stem, rsel); } catch (err) { throw new Error(`resin profile ${rsel}: ${err.message}`); }
       }
       if (rem) { try { await helper("/api/fprof", stem + "\n" + prof); } catch (err) { toast("Profile link not saved: " + err.message, true); } }
       await sdcpAck(128, {Filename: prefix(f) + f.name, StartLayer: 0}); toast(`Print started: ${f.name}` + (prof ? ` · profile ${prof}` : ""));
@@ -4202,10 +4373,12 @@ async function loadHistory() {
   try {
     const dir = await listDir(SGLOG), all = dir.filter(f => f.size >= 0 && HNAME.test(f.name));
     const tlf = new Map(dir.filter(f => f.size > 0 && /\.h264$/.test(f.name)).map(f => [f.name, f.size]));
+    const tld = new Map();                                   // timelapse files in the hidden folder on the files partition (name -> size)
+    try { for (const f of await listDir(TLDIR)) if (f.size > 0 && /\.h264$/.test(f.name)) tld.set(f.name, f.size); } catch (e) { /* folder not there yet */ }
     const old = new Map(HIST.rows.map(r => [r.name, r]));
     HIST.rows = all.map(f => {
       const m = f.name.match(HNAME), prev = old.get(f.name);
-      return {name: f.name, size: f.size, mtime: f.mtime, stem: m[7], tl: tlf.get(f.name.replace(/\.csv$/, ".h264")) || 0, meta: prev && prev.size === f.size ? prev.meta : undefined,
+      return {name: f.name, size: f.size, mtime: f.mtime, stem: m[7], tl: tld.get(f.name.replace(/\.csv$/, ".h264")) || tlf.get(f.name.replace(/\.csv$/, ".h264")) || 0, tlhid: tld.has(f.name.replace(/\.csv$/, ".h264")), meta: prev && prev.size === f.size ? prev.meta : undefined,
         date: m[1] ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]) / 1000 : 0};
     }).sort((a, b) => (!!a.date !== !!b.date) ? (a.date ? 1 : -1) : a.date ? b.date - a.date : b.mtime - a.mtime);
     for (const n of [...HIST.sel]) if (!HIST.rows.some(r => r.name === n)) HIST.sel.delete(n);
@@ -4246,7 +4419,7 @@ function renderHistory() {
       ${pf ? `<img class="th" loading="lazy" alt="" src="${thumbUrl(pf)}" onerror="this.className='th blank';this.removeAttribute('src')">` : `<div class="th blank"></div>`}
       <div style="min-width: 0"><div class="fn" title="${esc(r.name)}">${esc(nm)}${run ? '<span class="pill">printing</span>' : ""}</div>
         <div class="sub">${bits.join(" · ")}</div></div>
-      <div class="fa">${r.tl ? `<a class="ib" href="${SGLOG + encodeURIComponent(r.name.replace(/\.csv$/, ".h264"))}" download="${esc(r.name.replace(/\.csv$/, ".h264"))}" title="Download the timelapse (${fmtSize(r.tl)}, H.264: make the video on your PC with ffmpeg -framerate 30 -i FILE.h264 -c copy FILE.mp4)" aria-label="Download the timelapse of ${esc(nm)}">${ICON_FILM}</a>` : ""}<a class="ib" href="${SGLOG + encodeURIComponent(r.name)}" download="${esc(r.name)}" title="${run ? "Download what is recorded so far" : "Download this log (CSV)"}">${ICON.dl}</a></div></li>`;
+      <div class="fa">${r.tl ? `<a class="ib" href="${(r.tlhid ? TLDIR : SGLOG) + encodeURIComponent(r.name.replace(/\.csv$/, ".h264"))}" download="${esc(r.name.replace(/\.csv$/, ".h264"))}" title="Download the timelapse (${fmtSize(r.tl)}, H.264: make the video on your PC with ffmpeg -framerate 30 -i FILE.h264 -c copy FILE.mp4)" aria-label="Download the timelapse of ${esc(nm)}">${ICON_FILM}</a>` : ""}<a class="ib" href="${SGLOG + encodeURIComponent(r.name)}" download="${esc(r.name)}" title="${run ? "Download what is recorded so far" : "Download this log (CSV)"}">${ICON.dl}</a></div></li>`;
   }).join("") : `<li class="empty">No job logs on the printer yet.</li>`;
   $("hmore").hidden = rows.length <= HIST.shown;
   $("hmore").textContent = `Show ${Math.min(8, rows.length - HIST.shown)} more`;

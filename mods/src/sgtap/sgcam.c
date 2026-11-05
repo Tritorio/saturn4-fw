@@ -16,6 +16,7 @@
  * rebuilt, a frame ends when the RTP timestamp changes. Build: tools/build_sgcam.sh (printer glibc 2.28). */
 #define _GNU_SOURCE
 #include <arpa/inet.h>
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <netinet/in.h>
@@ -40,6 +41,13 @@ static const char *g_rtsp = NULL;        /* default: the printer's own address a
 static int g_allow_print;               /* set per viewer from the request */
 static int g_http = 8091, g_udp = 40100, g_ls = -1;
 static const char *g_csvdir = "/media/mmcblk0p2/sglog";
+/* the timelapse files: a hidden folder on the big files partition (6 GB; the log partition has ~230 MB). The total of all .h264 files in it is
+ * kept under TL_LIMIT_BYTES (2 GiB, the user's value): before each picture the OLDEST files (names start with the job's date, so name order = time order) are
+ * deleted until the total fits; the file of the running job is never deleted. If the partition is not there the log folder is used. */
+static const char *g_tldir = "/media/mmcblk0p3/.timelapse";
+#define TL_LIMIT_BYTES 2147483648LL
+static unsigned g_tl_deleted;                  /* files deleted by the limit since sgcam started */
+static char g_tl_lastdel[160];
 static char g_host[48] = "";            /* the printer's own address as a viewer reached it (cached for the timelapse pictures) */
 #define TL_PORT 8092
 
@@ -262,6 +270,22 @@ static int send_all(int fd, const void *d, size_t n)
     const uint8_t *p = d;
     while (n) {
         ssize_t r = send(fd, p, n, MSG_NOSIGNAL);
+        if (r < 0 && errno == EINTR)
+            continue;
+        if (r <= 0)
+            return 0;
+        p += r;
+        n -= (size_t)r;
+    }
+    return 1;
+}
+
+/* the same for a regular file (send only works on sockets: the timelapse file writes failed with ENOTSOCK) */
+static int write_all(int fd, const void *d, size_t n)
+{
+    const uint8_t *p = d;
+    while (n) {
+        ssize_t r = write(fd, p, n);
         if (r < 0 && errno == EINTR)
             continue;
         if (r <= 0)
@@ -521,6 +545,25 @@ static void fail(int cli, const char *line, const char *msg)
     send_all(cli, h, (size_t)n);
 }
 
+static int g_ts = -1;                          /* trigger socket */
+static pid_t g_child;
+static char tl_base[200] = "";
+static unsigned tl_frames, tl_skipped, tl_failed;
+static int tl_layer = -1;
+static double g_ideal;                         /* viewer path: the moment the picture should show (now_s clock); 0 = none */
+static uint8_t *g_cand;                        /* viewer path: the last key frame before g_ideal (SPS+PPS+IDR), kept in case it is nearer than the next one */
+static size_t g_cand_n;
+static double g_cand_t;
+static double g_trig_t;                        /* child path: when the trigger datagram arrived (for the lag log) */
+static long g_lead_ms;                         /* the lead of the last datagram: ms from the datagram to the moment the picture should show */
+static int g_pend;                             /* a timelapse trigger waits for the next key frame of a running viewer stream */
+static const char *tl_dir(void);               /* the timelapse folder */
+static void tl_path(char *out, size_t n);       /* <timelapse folder>/<job>.h264 */
+static long long tl_total(int enforce);        /* total bytes of the timelapse files; enforce = delete the oldest ones above the limit */
+static int tl_parse(char *m, ssize_t r);       /* "T <layer> <lead_ms> <base>" -> tl_base / tl_layer (job change resets the counters); 1 = valid */
+static int au_scan(const uint8_t *d, size_t n, uint8_t *hdr, size_t *hn, size_t hcap);
+static void tl_status(char *out, size_t n);
+static int send_all(int fd, const void *d, size_t n);
 static int read_request(int fd, char *req, size_t n, double maxs);
 static void http_reply(int fd, int code, const char *type, const char *body);
 
@@ -537,6 +580,11 @@ static void reject_others(void)
         setsockopt(x, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof tv);
         if (read_request(x, rq, sizeof rq, 0.25) && strncmp(rq, "GET /status ", 12) == 0)
             http_reply(x, 200, "application/json", "{\"idle\":0,\"busy\":1}");
+        else if (strncmp(rq, "GET /tl ", 8) == 0) {
+            char j[600];
+            tl_status(j, sizeof j);
+            http_reply(x, 200, "application/json", j);
+        }
         else if (strncmp(rq, "OPTIONS ", 8) == 0)
             http_reply(x, 204, "text/plain", "");
         else
@@ -642,8 +690,26 @@ static void serve_stream(int cli)
                 fail(cli, "504 Gateway Timeout", "the camera sends nothing");
             break;
         }
-        struct pollfd pf = {us, POLLIN, 0};
-        if (poll(&pf, 1, 200) <= 0)
+        struct pollfd pfv[2] = {{us, POLLIN, 0}, {g_ts, POLLIN, 0}};
+        if (poll(pfv, g_ts >= 0 ? 2 : 1, 200) <= 0)
+            continue;
+        if (g_ts >= 0 && (pfv[1].revents & POLLIN)) {      /* timelapse triggers while watching: the picture comes from THIS stream */
+            char tm[300];
+            ssize_t tr;
+            while ((tr = recv(g_ts, tm, sizeof tm - 1, MSG_DONTWAIT)) > 0) {
+                if (!tl_parse(tm, tr))
+                    continue;
+                if (g_pend)
+                    tl_skipped++;
+                else {
+                    tl_total(1);
+                    g_pend = 1;
+                    g_ideal = t + (double)g_lead_ms / 1000.0;
+                    g_cand_n = 0;
+                }
+            }
+        }
+        if (!(pfv[0].revents & POLLIN))
             continue;
         ssize_t r = recv(us, dg, sizeof dg, 0);
         if (r < 14)
@@ -658,6 +724,51 @@ static void serve_stream(int cli)
         lastseq = seq;
         uint32_t ts = ((uint32_t)dg[4] << 24) | ((uint32_t)dg[5] << 16) | ((uint32_t)dg[6] << 8) | dg[7];
         if (haveTs && ts != lastTs) {
+            if (g_pend && fn && c.init_sent && !corrupt) {     /* the pending timelapse picture = the key frame of this stream nearest to the ideal moment */
+                uint8_t hb[600], sh[600];
+                size_t hn = 0, shn = 0;
+                int m = au_scan(frame, fn, hb, &hn, sizeof hb);
+                if (m & 1) {
+                    static const uint8_t sc4[4] = {0, 0, 0, 1};
+                    const uint8_t *wp = NULL;
+                    size_t wn = 0;
+                    if (!(m & 2) || !(m & 4)) {
+                        memcpy(sh, sc4, 4); memcpy(sh + 4, c.sps, (size_t)c.sps_n); shn = 4 + (size_t)c.sps_n;
+                        memcpy(sh + shn, sc4, 4); memcpy(sh + shn + 4, c.pps, (size_t)c.pps_n); shn += 4 + (size_t)c.pps_n;
+                    }
+                    if (t < g_ideal) {                              /* too early: keep it as the candidate and wait for the next one */
+                        if (!g_cand)
+                            g_cand = malloc((size_t)1 << 21);
+                        if (g_cand && shn + fn <= ((size_t)1 << 21)) {
+                            memcpy(g_cand, sh, shn);
+                            memcpy(g_cand + shn, frame, fn);
+                            g_cand_n = shn + fn;
+                            g_cand_t = t;
+                        }
+                    } else {
+                        char path[320];
+                        int ok = 0, fd;
+                        if (g_cand_n && (g_ideal - g_cand_t) < (t - g_ideal)) {
+                            wp = g_cand;                            /* the earlier key frame is nearer */
+                            wn = g_cand_n;
+                        }
+                        tl_path(path, sizeof path);
+                        fd = open(path, O_WRONLY | O_CREAT | O_APPEND, 0644);
+                        if (fd >= 0) {
+                            ok = wp ? write_all(fd, wp, wn) : ((!shn || write_all(fd, sh, shn)) && write_all(fd, frame, fn));
+                            close(fd);
+                        }
+                        fprintf(stderr, "sgcam: timelapse picture %s from the live view, %+.0f ms from the ideal moment\n", ok ? "saved" : "FAILED",
+                                (wp ? g_cand_t - g_ideal : t - g_ideal) * 1000.0);
+                        if (ok)
+                            tl_frames++;
+                        else
+                            tl_failed++;
+                        g_pend = 0;
+                        g_cand_n = 0;
+                    }
+                }
+            }
             on_frame(&c, frame, fn, lastTs, corrupt);
             fn = 0;
             corrupt = 0;
@@ -724,11 +835,6 @@ out:
  * job start and the plate is above 45 mm). A child process (nice 19, hard 6 s alarm) takes the next key frame of the camera stream and appends it to
  * <csvdir>/<job base>.h264 (an all-intra Annex-B file: SPS + PPS + IDR per picture; ffmpeg -framerate 30 -i X.h264 -c copy X.mp4). Nothing waits for it:
  * a trigger that comes while the previous picture is still being taken is counted as skipped. The camera session is always closed with TEARDOWN. */
-static int g_ts = -1;                          /* trigger socket */
-static pid_t g_child;
-static char tl_base[200] = "";
-static unsigned tl_frames, tl_skipped, tl_failed;
-static int tl_layer = -1;
 
 static int own_host(char *host, size_t n)
 {
@@ -798,7 +904,7 @@ static int grab_frame(const char *outpath)
     int rt = -1, us = -1, cseq = 1, playing = 0, result = 1;
     uint8_t *frame = NULL, dg[2048], sh[600];
     size_t fn = 0, fcap = 0, shn = 0;
-    int haveTs = 0, corrupt = 0, lastseq = -1;
+    int haveTs = 0, corrupt = 0, lastseq = -1, n_au = 0, n_idr = 0, n_bad = 0, n_pk = 0;
     uint32_t lastTs = 0;
     if (!own_host(host, sizeof host))
         return 1;
@@ -816,6 +922,10 @@ static int grab_frame(const char *outpath)
     up -= 2;
     if (!bound)
         goto out;
+    {
+        int rcv = 1 << 20;                                   /* a low-priority process must not lose the big key frame burst */
+        setsockopt(us, SOL_SOCKET, SO_RCVBUF, &rcv, sizeof rcv);
+    }
     rt = socket(AF_INET, SOCK_STREAM, 0);
     struct sockaddr_in ra;
     memset(&ra, 0, sizeof ra);
@@ -845,7 +955,7 @@ static int grab_frame(const char *outpath)
     if (!rtsp_cmd(rt, "PLAY", url, cseq++, sess, "", resp, sizeof resp))
         goto out;
     double t0 = now_s();
-    while (now_s() - t0 < 5.0 && result) {
+    while (now_s() - t0 < 8.0 && result) {
         struct pollfd pf = {us, POLLIN, 0};
         if (poll(&pf, 1, 200) <= 0)
             continue;
@@ -853,6 +963,7 @@ static int grab_frame(const char *outpath)
         if (r < 14)
             continue;
         int seq = (dg[2] << 8) | dg[3];
+        n_pk++;
         if (lastseq >= 0 && seq != ((lastseq + 1) & 0xffff))
             corrupt = 1;
         lastseq = seq;
@@ -861,6 +972,9 @@ static int grab_frame(const char *outpath)
             size_t hn = 0;
             uint8_t hb[600];
             int m = fn ? au_scan(frame, fn, hb, &hn, sizeof hb) : 0;
+            n_au++;
+            n_idr += m & 1;
+            n_bad += (m & 1) && corrupt;
             if (m & 6) {                                     /* keep the newest SPS + PPS */
                 memcpy(sh, hb, hn);
                 shn = hn;
@@ -870,8 +984,8 @@ static int grab_frame(const char *outpath)
                 if (fd >= 0) {
                     int ok = 1;
                     if (!(m & 2) || !(m & 4))
-                        ok = send_all(fd, sh, shn);
-                    ok = ok && send_all(fd, frame, fn);
+                        ok = write_all(fd, sh, shn);
+                    ok = ok && write_all(fd, frame, fn);
                     close(fd);
                     result = ok ? 0 : 1;
                     if (result == 0)
@@ -908,6 +1022,8 @@ static int grab_frame(const char *outpath)
         fn += add;
     }
 out:
+    fprintf(stderr, "sgcam: timelapse picture %s %.0f ms after the trigger (pk %d, au %d, key %d, damaged key %d)\n", result ? "FAILED" : "saved",
+            (now_s() - g_trig_t) * 1000.0, n_pk, n_au, n_idr, n_bad);
     if (rt >= 0) {
         if (playing)
             rtsp_cmd(rt, "TEARDOWN", url, cseq++, sess, "", resp, sizeof resp);
@@ -917,6 +1033,77 @@ out:
         close(us);
     free(frame);
     return result;
+}
+
+static const char *tl_dir(void)
+{
+    static int ok = -1;
+    static double chk;
+    double t = now_s();
+    if (ok < 0 || t - chk > 30) {
+        struct statvfs sv;
+        chk = t;
+        ok = 0;
+        if ((mkdir(g_tldir, 0755) == 0 || errno == EEXIST) && statvfs(g_tldir, &sv) == 0 &&
+            (long long)sv.f_blocks * (long long)sv.f_frsize > (100LL << 20))
+            ok = 1;
+    }
+    return ok ? g_tldir : g_csvdir;
+}
+
+static void tl_path(char *out, size_t n)
+{
+    snprintf(out, n, "%s/%s.h264", tl_dir(), tl_base);
+}
+
+static long long tl_total(int enforce)
+{
+    static char names[400][128];
+    static long long sz[400];
+    char path[320], cur[260];
+    int n = 0;
+    long long total = 0;
+    struct dirent *e;
+    DIR *d = opendir(tl_dir());
+    if (!d)
+        return 0;
+    while ((e = readdir(d)) != NULL && n < 400) {
+        size_t l = strlen(e->d_name);
+        if (l <= 5 || l >= 127 || strcmp(e->d_name + l - 5, ".h264") != 0)
+            continue;
+        snprintf(path, sizeof path, "%s/%s", tl_dir(), e->d_name);
+        int fd = open(path, O_RDONLY);
+        off_t end = 0;
+        if (fd >= 0) {
+            end = lseek(fd, 0, SEEK_END);
+            close(fd);
+        }
+        sz[n] = end > 0 ? (long long)end : 0;
+        total += sz[n];
+        memcpy(names[n], e->d_name, l + 1);
+        n++;
+    }
+    closedir(d);
+    if (!enforce)
+        return total;
+    snprintf(cur, sizeof cur, "%s.h264", tl_base);
+    while (total > TL_LIMIT_BYTES) {
+        int pick = -1;
+        for (int i = 0; i < n; i++)
+            if (names[i][0] && strcmp(names[i], cur) != 0 && (pick < 0 || strcmp(names[i], names[pick]) < 0))
+                pick = i;
+        if (pick < 0)
+            break;                                      /* only the running job is left: nothing more to delete */
+        snprintf(path, sizeof path, "%s/%s", tl_dir(), names[pick]);
+        if (unlink(path) != 0)
+            break;
+        fprintf(stderr, "sgcam: timelapse limit: deleted the oldest file %s (%lld bytes)\n", names[pick], sz[pick]);
+        total -= sz[pick];
+        g_tl_deleted++;
+        snprintf(g_tl_lastdel, sizeof g_tl_lastdel, "%s", names[pick]);
+        names[pick][0] = 0;
+    }
+    return total;
 }
 
 static void tl_reap(void)
@@ -931,47 +1118,68 @@ static void tl_reap(void)
     }
 }
 
+static int tl_parse(char *m, ssize_t r)
+{
+    int layer = 0;
+    long lead;
+    const char *p, *b;
+    m[r] = 0;
+    if (m[0] != 'T' || m[1] != ' ')
+        return 0;
+    p = m + 2;
+    while (*p >= '0' && *p <= '9')
+        layer = layer * 10 + (*p++ - '0');
+    if (*p++ != ' ' || !*p)
+        return 0;
+    lead = 0;
+    {
+        const char *q = p;                                  /* "<lead_ms> " is optional (the old library sends none) */
+        long v = 0;
+        while (*q >= '0' && *q <= '9')
+            v = v * 10 + (*q++ - '0');
+        if (q > p && *q == ' ' && q[1]) {
+            lead = v;
+            p = q + 1;
+        }
+    }
+    b = p;
+    for (const char *q = b; *q; q++)
+        if (*q == '/' || *q == '"' || *q == '\\' || (unsigned char)*q < 32)
+            return 0;
+    if (strcmp(b, tl_base) != 0) {                          /* a new job */
+        snprintf(tl_base, sizeof tl_base, "%s", b);
+        tl_frames = tl_skipped = tl_failed = 0;
+    }
+    tl_layer = layer;
+    g_lead_ms = lead;
+    return 1;
+}
+
 static void tl_trigger(void)
 {
     char m[300], path[320];
     ssize_t r;
     while ((r = recv(g_ts, m, sizeof m - 1, MSG_DONTWAIT)) > 0) {
-        int layer = 0;
-        const char *p = m, *b;
-        m[r] = 0;
-        if (m[0] != 'T' || m[1] != ' ')
+        if (!tl_parse(m, r))
             continue;
-        p = m + 2;
-        while (*p >= '0' && *p <= '9')
-            layer = layer * 10 + (*p++ - '0');
-        if (*p++ != ' ' || !*p)
-            continue;
-        b = p;
-        for (const char *q = b; *q; q++)
-            if (*q == '/' || *q == '"' || *q == '\\' || (unsigned char)*q < 32)
-                goto skip;
-        if (strcmp(b, tl_base) != 0) {                      /* a new job */
-            snprintf(tl_base, sizeof tl_base, "%s", b);
-            tl_frames = tl_skipped = tl_failed = 0;
-        }
-        tl_layer = layer;
         tl_reap();
         if (g_child > 0) {
             tl_skipped++;
             continue;
         }
-        snprintf(path, sizeof path, "%s/%s.h264", g_csvdir, tl_base);
+        tl_path(path, sizeof path);
+        tl_total(1);
+        g_trig_t = now_s();
         g_child = fork();
         if (g_child == 0) {
             if (nice(19) < 0) {}
-            alarm(7);
+            alarm(10);
             _exit(grab_frame(path) == 0 ? 0 : 1);
         }
         if (g_child < 0) {
             g_child = 0;
             tl_failed++;
         }
-    skip:;
     }
 }
 
@@ -980,7 +1188,7 @@ static void tl_status(char *out, size_t n)
     struct statvfs sv;
     char path[320];
     long long bytes = 0, freemb = -1;
-    snprintf(path, sizeof path, "%s/%s.h264", g_csvdir, tl_base);
+    tl_path(path, sizeof path);
     if (tl_base[0]) {                                       /* no stat: glibc 2.28 has it only in libc_nonshared */
         int fd = open(path, O_RDONLY);
         if (fd >= 0) {
@@ -989,12 +1197,14 @@ static void tl_status(char *out, size_t n)
             close(fd);
         }
     }
-    if (statvfs(g_csvdir, &sv) == 0)
+    if (statvfs(tl_dir(), &sv) == 0)
         freemb = (long long)sv.f_bavail * (long long)sv.f_frsize / 1048576;
     char fp[320];
     snprintf(fp, sizeof fp, "%s/TIMELAPSE", g_csvdir);
-    snprintf(out, n, "{\"on\":%d,\"job\":\"%s\",\"frames\":%u,\"skipped\":%u,\"failed\":%u,\"layer\":%d,\"bytes\":%lld,\"free_mb\":%lld,\"busy\":%d}",
-             access(fp, F_OK) == 0, tl_base, tl_frames, tl_skipped, tl_failed, tl_layer, bytes, freemb, g_child > 0);
+    snprintf(out, n, "{\"on\":%d,\"job\":\"%s\",\"frames\":%u,\"skipped\":%u,\"failed\":%u,\"layer\":%d,\"bytes\":%lld,\"free_mb\":%lld,\"busy\":%d,"
+             "\"dir\":\"%s\",\"total_mb\":%lld,\"limit_mb\":%lld,\"deleted\":%u,\"last_deleted\":\"%s\"}",
+             access(fp, F_OK) == 0, tl_base, tl_frames, tl_skipped, tl_failed, tl_layer, bytes, freemb, g_child > 0,
+             tl_dir(), tl_total(0) / 1048576, TL_LIMIT_BYTES / 1048576, g_tl_deleted, g_tl_lastdel);
 }
 
 /* ---- HTTP front ---- */
@@ -1042,7 +1252,7 @@ static int read_request(int fd, char *req, size_t n, double maxs)
 int main(int argc, char **argv)
 {
     int ch;
-    while ((ch = getopt(argc, argv, "p:u:r:l:c:t:")) != -1) {
+    while ((ch = getopt(argc, argv, "p:u:r:l:c:t:d:")) != -1) {
         if (ch == 'p')
             g_http = to_int(optarg);
         else if (ch == 'u')
@@ -1053,6 +1263,8 @@ int main(int argc, char **argv)
             g_live = optarg;
         else if (ch == 'c')
             g_csvdir = optarg;
+        else if (ch == 'd')
+            g_tldir = optarg;
         else if (ch == 't')                    /* test: take one timelapse picture into the file and exit (0 = saved) */
             return grab_frame(optarg);
         else
@@ -1116,6 +1328,7 @@ int main(int argc, char **argv)
                         g_child = 0;
                     }
                     serve_stream(cli);
+                    g_pend = 0;
                     while (g_ts >= 0 && recv(g_ts, req, sizeof req, MSG_DONTWAIT) > 0)   /* triggers of the viewing time are stale */
                         ;
                 }

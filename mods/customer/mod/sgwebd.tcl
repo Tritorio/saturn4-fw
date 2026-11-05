@@ -439,6 +439,7 @@ proc handle {c method path query host body origin} {
                 if {$ld > 100 || $ls < 1 || $ls > 30} { return [err $c 400 "bad command"] }
             } elseif {[regexp {^lcdswap ([a-z0-9_-]{1,32}) [01]$} $cmd]} {
             } elseif {[regexp {^mix ([0-9]{1,4})$} $cmd]} {
+            } elseif {$cmd eq "resin off" || ([regexp {^resin (.+)$} $cmd -> rpn] && [valid_profile $rpn])} {
             } elseif {$cmd eq "tl on" || $cmd eq "tl off"} {
             } elseif {[regexp {^waitov [01]$} $cmd]} {
             } elseif {$cmd eq "expo off"} {
@@ -495,6 +496,38 @@ proc handle {c method path query host body origin} {
             set bak [mach_backup flex_$w]
             log "flex plate $w: backup $bak"
             reply $c 200 "{\"ok\":true,\"id\":\"[send_cmd "flex $w"]\",\"backup\":\"$bak\"}"
+        }
+        "POST /api/resin" {
+            set i [string first \n $body]
+            set name [string trimright [string range $body 0 $i-1] \r]
+            if {$i < 0 || ![valid_profile $name] || $name eq "off"} { return [err $c 400 "bad resin name"] }
+            set rows {}
+            set seen {}
+            foreach ln [split [string range $body $i+1 end] \n] {
+                set ln [string trim $ln]
+                if {$ln eq ""} continue
+                if {![regexp {^([0-9]{1,4}) ([0-9]{1,5}) ([0-9]{1,5})$} $ln -> um b n]} { return [err $c 400 "bad row: $ln"] }
+                foreach v {um b n} { set x [string trimleft [set $v] 0]; if {$x eq ""} { set x 0 }; set $v $x }
+                if {$um < 1 || $um > 2000 || $b > 60000 || $n > 60000} { return [err $c 400 "row out of range: $ln"] }
+                if {$um in $seen} { return [err $c 400 "thickness $um um twice"] }
+                lappend seen $um
+                lappend rows "$um $b $n"
+            }
+            if {[llength $rows] < 1 || [llength $rows] > 16} { return [err $c 400 "1 to 16 rows"] }
+            file mkdir $csvdir/resins
+            set f [open $csvdir/resins/.tmp w]
+            puts $f [join $rows \n]
+            close $f
+            file rename -force $csvdir/resins/.tmp $csvdir/resins/$name.txt
+            log "resin profile $name: [llength $rows] rows"
+            reply $c 200 {{"ok":true}}
+        }
+        "POST /api/resindel" {
+            set name [string trim $body]
+            if {![valid_profile $name]} { return [err $c 400 "bad resin name"] }
+            file delete $csvdir/resins/$name.txt
+            log "resin profile $name: deleted"
+            reply $c 200 {{"ok":true}}
         }
         "POST /api/slowdel" {
             set name [string trim $body]
@@ -605,6 +638,7 @@ proc handle {c method path query host body origin} {
                 file delete $csvdir/$name
                 file delete $csvdir/[file rootname $name].txt
                 file delete $csvdir/[file rootname $name].h264
+                file delete /media/mmcblk0p3/.timelapse/[file rootname $name].h264
                 incr n
             }
             log "job logs deleted: $n, skipped: [llength $skipped]"
@@ -632,7 +666,7 @@ proc handle {c method path query host body origin} {
             reply $c 200 "{\"ok\":true,\"id\":\"[send_cmd "k $k"]\"}"
         }
         default {
-            if {$path in {/ /index.html /api/ping /api/stock/check /api/stock/restore /api/password /api/cmd /api/calib /api/slow /api/slowdel /api/fprof /api/profdel /api/flex /api/machine /api/machine/restore /api/machine/delete /api/logdel /api/clock}} {
+            if {$path in {/ /index.html /api/ping /api/stock/check /api/stock/restore /api/password /api/cmd /api/calib /api/slow /api/slowdel /api/resin /api/resindel /api/fprof /api/profdel /api/flex /api/machine /api/machine/restore /api/machine/delete /api/logdel /api/clock}} {
                 err $c 405 "method not allowed"
             } else {
                 err $c 404 "not found"

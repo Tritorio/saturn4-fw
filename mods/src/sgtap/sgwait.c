@@ -43,6 +43,7 @@
                                   +0x1010 layers, +0x1028 total height (float) */
 #define W_BOTDEF   3           /* bottom layers when the print file does not tell */
 #define W_STATE    0x30b
+#define W_EXPO     0x30c       /* 1 = exposing */
 #define W_START    0x318
 #define W_EXTRA    0x250
 #define W_WAIT     0x25c
@@ -857,8 +858,30 @@ static double zm_now_mm(int *ok);
 static char tl_job[256];
 static int tl_on, tl_sock = -1;
 static double tl_minz = TL_MIN_Z;
+/* WHEN the trigger goes out (user: the picture was not synchronised with the end of the retract). The camera needs about TL_LAG_MS from the
+ * trigger to a picture (RTSP session + the encoder's next key frame, measured 2.26 s after PLAY), so a trigger sent when the wait starts gives a picture
+ * from the exposure. The time from the END OF THE EXPOSURE to the start of the next wait (lift + peel + retract) is mechanical and repeats from layer to
+ * layer: it is measured every cycle and the next trigger is sent (that time + TL_AFTER_MS - lag) after the next exposure end, so the key frame lands
+ * TL_AFTER_MS after the wait started. The first cycle of a job has no measurement: its trigger goes out when the wait starts (late, as before).
+ * <csvdir>/TLLAG = lag in ms (tuning without a rebuild, read at job start). */
+#define TL_LAG_MS   2300
+#define TL_AFTER_MS 400
+static long tl_lag = TL_LAG_MS;
+static uint64_t tl_ee;            /* app ms of the last exposure end (0 = none) */
+static long tl_D = -1;            /* ms from an exposure end to the next wait start, measured in the last cycle (-1 = unknown) */
+static uint64_t tl_fire;          /* app ms the scheduled trigger goes out (0 = none) */
+static uint64_t tl_ideal;         /* app ms the picture should show */
+static int tl_fire_layer, tl_sent, tl_ex_prev;
+/* Z anchor (user: Z moves once per layer, about one layer thickness, whatever the tilt speeds): the first tick the Z position differs from the
+ * exposure's Z is "Z step seen". The time from there to the next wait start is measured too; when it is long enough for the camera lag the trigger is
+ * scheduled from the Z step (the release tilt, the part dynamic lift changes, is then not in the interval), else from the exposure end. Both intervals
+ * go to /tmp/sgtl.log, one line per wait. */
+static double tl_zrest;
+static int tl_zok, tl_use_z;
+static long tl_Dz = -1;
+static uint64_t tl_zs;
 
-static void sgtl_trigger(void)
+static void sgtl_trigger(int layer, long lead_ms)
 {
     char flag[160], msg[300];
     const char *b;
@@ -889,6 +912,21 @@ static void sgtl_trigger(void)
                         tl_minz = neg ? -v : v;
                 }
             }
+            tl_lag = TL_LAG_MS;
+            snprintf(flag, sizeof flag, "%s/TLLAG", sg_csvdir);
+            fd = real_open(flag, O_RDONLY | O_CLOEXEC);
+            if (fd >= 0) {
+                char buf[16];
+                ssize_t r = read(fd, buf, sizeof buf - 1);
+                real_close(fd);
+                if (r > 0) {
+                    int i = 0, v = 0, dig = 0;
+                    buf[r] = 0;
+                    for (; buf[i] >= '0' && buf[i] <= '9'; i++) { v = v * 10 + (buf[i] - '0'); dig++; }
+                    if (dig && dig <= 6)
+                        tl_lag = v;
+                }
+            }
         }
     }
     if (!tl_on)
@@ -901,7 +939,7 @@ static void sgtl_trigger(void)
     bl = strlen(b);
     if (bl > 4 && strcmp(b + bl - 4, ".txt") == 0)
         bl -= 4;
-    n = snprintf(msg, sizeof msg, "T %d %.*s", s_layer, (int)bl, b);
+    n = snprintf(msg, sizeof msg, "T %d %ld %.*s", layer, lead_ms > 0 ? lead_ms : 0, (int)bl, b);
     if (tl_sock < 0)
         tl_sock = socket(AF_INET, SOCK_DGRAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
     if (tl_sock >= 0) {
@@ -941,6 +979,8 @@ static void *wait_thread(void *arg)
         uintptr_t P = HW(W_PPTR);
         uint64_t now_ms = mono_raw_ms();
         if (!P || (P & 3)) {
+            tl_ee = tl_fire = tl_zs = 0;
+            tl_D = tl_Dz = -1;
             if (wc.active)
                 finish_wait(0, now_ms);
             sgexpo_idle(now_ms);
@@ -951,10 +991,69 @@ static void *wait_thread(void *arg)
             if (wc.active && (st != 2 || t0 != wc.t0))
                 finish_wait(P, now_ms);
             /* only a wait the app has just started (we look 20 times a second) */
+            {
+                int ex = HB(P + W_EXPO);                         /* end of an exposure: schedule the next timelapse trigger */
+                if (tl_ex_prev == 1 && ex == 0) {
+                    tl_ee = now_ms;
+                    tl_fire = 0;
+                    tl_sent = 0;
+                    tl_zs = 0;
+                    {
+                        int zk = 0;
+                        tl_zrest = zm_now_mm(&zk);
+                        tl_zok = zk;
+                    }
+                    tl_use_z = tl_on && tl_zok && tl_Dz > 0 && tl_Dz + TL_AFTER_MS >= tl_lag;
+                    if (tl_on && !tl_use_z && tl_D > 0) {
+                        long lead = tl_D + TL_AFTER_MS;          /* ms from the exposure end to the moment the picture should show */
+                        tl_ideal = now_ms + (uint64_t)lead;
+                        tl_fire = tl_ideal > (uint64_t)tl_lag + now_ms ? tl_ideal - (uint64_t)tl_lag : now_ms;
+                        tl_fire_layer = s_layer >= 0 ? s_layer + 1 : 0;
+                        tl_sent = 0;
+                    }
+                }
+                tl_ex_prev = ex;
+                if (tl_ee && !tl_zs && tl_zok) {                 /* Z step seen */
+                    int zk = 0;
+                    double z = zm_now_mm(&zk);
+                    if (zk && (z > tl_zrest + 0.003 || z < tl_zrest - 0.003)) {
+                        tl_zs = now_ms;
+                        if (tl_use_z) {
+                            tl_ideal = now_ms + (uint64_t)(tl_Dz + TL_AFTER_MS);
+                            tl_fire = tl_ideal > (uint64_t)tl_lag + now_ms ? tl_ideal - (uint64_t)tl_lag : now_ms;
+                            tl_fire_layer = s_layer >= 0 ? s_layer + 1 : 0;
+                        }
+                    }
+                }
+                if (tl_fire && now_ms >= tl_fire) {
+                    tl_fire = 0;
+                    tl_sent = 1;
+                    sgtl_trigger(tl_fire_layer, tl_ideal > now_ms ? (long)(tl_ideal - now_ms) : 0);
+                }
+            }
             if (!wc.active && st == 2 && t0 != w_last_t0 && t0 <= now_ms && now_ms - t0 < 3000) {
                 w_last_t0 = t0;
                 begin_wait(P, t0, now_ms);
-                sgtl_trigger();
+                if (tl_ee && t0 > tl_ee && t0 - tl_ee < 120000)
+                    tl_D = (long)(t0 - tl_ee);                   /* this cycle's exposure end -> wait start, used for the next trigger */
+                else
+                    tl_D = -1;
+                tl_Dz = (tl_zs && t0 > tl_zs && t0 - tl_zs < 120000) ? (long)(t0 - tl_zs) : -1;
+                {
+                    char ln[160];
+                    int fd, n = snprintf(ln, sizeof ln, "layer %d exp_end->wait %ld  exp_end->Zstep %ld  Zstep->wait %ld  anchor %s  trigger %s\n", s_layer,
+                                         tl_D, tl_zs && tl_ee ? (long)(tl_zs - tl_ee) : -1L, tl_Dz, tl_use_z ? "Z" : "exp_end", tl_sent ? "early" : "late");
+                    if (tl_on && (fd = real_open("/tmp/sgtl.log", O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0644)) >= 0) {
+                        (void)!write(fd, ln, (size_t)n);
+                        real_close(fd);
+                    }
+                }
+                tl_ee = 0;
+                tl_zs = 0;
+                if (!tl_sent)                                    /* nothing was scheduled (first cycle, or no measurement yet): late, at the wait start */
+                    sgtl_trigger(s_layer, 0);
+                tl_sent = 0;
+                tl_fire = 0;
             }
             if (wc.active)
                 step_wait(P, now_ms);
