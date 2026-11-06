@@ -975,7 +975,7 @@
       </div>
       <div class="wnote">
         <span class="sub" id="mixz"></span>
-        <span class="qnote" hidden>The build plate moves between Z low and Z high (Z low + 35 mm) for the set time, so the resin is stirred while it warms. Z low is the plate position of the pre-heat (6 mm, 3 mm with the factory Z values). Stop, or switching pre-heat off, halts the plate at once; when the time is over, or after a stop, the plate rises to Z = 50 mm. The foreign matter guard acts on the way down. Only with the printer idle, Z homed, the guard armed (about a minute after the boot) and the tank in place.</span>
+        <span class="qnote" hidden>The build plate moves between Z low and Z high (Z low + 30 mm) for the set time, so the resin is stirred while it warms. Z low is the plate position of the pre-heat (6 mm, 3 mm with the factory Z values). Stop, or switching pre-heat off, halts the plate at once; when the time is over, or after a stop, the plate rises to Z = 50 mm. The foreign matter guard acts on the way down. Only with the printer idle, Z homed, the guard armed (about a minute after the boot) and the tank in place.</span>
         <span id="hzmsg" class="sub"></span>
       </div>
     </div>
@@ -1359,6 +1359,7 @@
       <label><input type="checkbox" id="hall" aria-label="Select all logs"><span id="hsel">0 selected</span></label>
       <span class="sp"></span>
       <button class="btn primary" id="hdl" disabled>Download</button>
+      <button class="btn danger" id="htldel" disabled title="Delete only the timelapse films of the selected jobs; the logs stay">Delete timelapse</button>
       <button class="btn danger" id="hdel" disabled>Delete</button>
     </div>
     <ul class="flist hlist" id="hlist"></ul>
@@ -2038,7 +2039,7 @@ async function authPoll() {
 const WRITE_SEL = ["#tare", "#auto", "label:has(#auto)", "#heatapply", "#dwapply", "#dwm2", "#dwn", "#uapply", "#setsave", "#setrestore", "#setdef",
   "#dlon", "label:has(#dlon)", "#dlapply", "#dlreset", "#xmminus", "#xmplus", "#xmgo", '[data-xm]:not([data-xm="c"])', "#exapply", "#exrevert", "#exsw", "#rpsw", "label:has(#rpsw)", "#rpsave", "#rpnew", "#rpdel", "#rpadd", "#rpcancel", "label:has(#exsw)", "#mxsw", "label:has(#mxsw)", "#mxfrom", "#mxfromm", "#mxfromp", "#jlsw", "label:has(#jlsw)", "#mxstate", "#qmap input", "#qmap button", "#dwstate", "#hstate", "#gsstate", "#dlstate", "#exstate", "#fxstate", "#tcstate",
   "#fxsw", "#fxoff", "#fxon", "#slapply", "#tapply", "#tcon", "label:has(#tcon)", "#gsapply", "#gssearch", "#slbeep", "label:has(#slbeep)", "#slbtest",
-  "#slsave", "#sldel", "#hdel", "#mapply", "#calopen", "#calapply", "#logall", "#pwchange", "#stockrestore",
+  "#slsave", "#sldel", "#hdel", "#htldel", "#mapply", "#calopen", "#calapply", "#logall", "#pwchange", "#stockrestore",
   "#plist button[data-pa]", "#mbaks button[data-restore]", "#mbaks button[data-delbak]", "#tlsw", "#featlist [data-sw]", "#featlist [data-note]", "#featlist label.fnote"].join(",");
 // The cards made for writing are greyed as a whole while logged out, except their graphs (canvas / svg role="img"): a block of the card
 // that holds no graph is greyed, the graph and the path to it stay. The other controls (Force card, Features list) are greyed one by one.
@@ -2196,7 +2197,13 @@ function heatRender() {
 
 $("heatclose").addEventListener("click", () => heatOpen(false));
 for (const b of document.querySelectorAll("#heatcard .sb")) b.addEventListener("click", () => {
-  const i = $(b.dataset.t); i.value = clampT(b.dataset.t, (+i.value || HMIN) + +b.dataset.d); heatRender(); });
+  const i = $(b.dataset.t);
+  if (b.dataset.t === "hmin") {                             // mixing minutes (no max, no temperature clamp)
+    i.value = Math.max(1, Math.floor(+i.value || 10) + +b.dataset.d);
+    try { localStorage.sgmixmin = i.value; } catch (e) {}
+    return;
+  }
+  i.value = clampT(b.dataset.t, (+i.value || HMIN) + +b.dataset.d); heatRender(); });
 for (const p of document.querySelectorAll("#heatcard .presets")) p.addEventListener("click", e => {
   if (e.target.tagName !== "BUTTON") return;
   $(p.dataset.t).value = +e.target.textContent; heatRender(); });
@@ -4427,6 +4434,8 @@ function renderHistory() {
   $("hsel").innerHTML = `<b style="font-weight: 500">${n} selected</b>` + (n ? ` <span class="sub">· ${fmtSize(sz)}</span>` : "");
   $("hdl").textContent = n ? `Download ${n}` : "Download"; $("hdl").disabled = !n;
   $("hdel").textContent = n ? `Delete ${n}` : "Delete"; $("hdel").disabled = !n;
+  const ntl = rows.filter(r => HIST.sel.has(r.name) && r.tl && !hRun(r)).length;
+  $("htldel").textContent = ntl ? `Delete ${ntl} timelapse${ntl === 1 ? "" : "s"}` : "Delete timelapse"; $("htldel").disabled = !ntl;
   $("hall").checked = !!selectable.length && selectable.every(r => HIST.sel.has(r.name));
 }
 $("hlist").addEventListener("change", e => {
@@ -4453,12 +4462,25 @@ $("hdl").addEventListener("click", async () => {
     await new Promise(res => setTimeout(res, 400));
   }
 });
+$("htldel").addEventListener("click", async () => {
+  const sel = HIST.rows.filter(r => HIST.sel.has(r.name) && r.tl && !hRun(r)); if (!sel.length) return;
+  const list = sel.slice(0, 12).map(r => `<li>${esc(r.stem.replace(/_/g, " "))} · ${r.date ? hDate(r.date) : "date unknown"} · timelapse ${fmtSize(r.tl)}</li>`).join("") +
+    (sel.length > 12 ? `<li>… and ${sel.length - 12} more</li>` : "");
+  if (!await ask({title: `Delete ${sel.length} timelapse${sel.length === 1 ? "" : "s"}?`,
+      body: `Only the timelapse films will be deleted (${fmtSize(sel.reduce((a, r) => a + r.tl, 0))} freed in total). The job logs and print files stay. This cannot be undone.<ul style="margin: 8px 0 0; padding-left: 18px">${list}</ul>`,
+      ok: `Delete ${sel.length} timelapse${sel.length === 1 ? "" : "s"}`, danger: true})) return;
+  try {
+    const r = await helper("/api/tldel", sel.map(x => x.name).join("\n"));
+    toast(`Deleted ${r.deleted} timelapse${r.deleted === 1 ? "" : "s"}` + (r.skipped ? `, ${r.skipped} skipped` : ""));
+  } catch (e) { toast("Delete failed: " + e.message, true); }
+  loadHistory();
+});
 $("hdel").addEventListener("click", async () => {
   const sel = HIST.rows.filter(r => HIST.sel.has(r.name) && !hRun(r)); if (!sel.length) return;
-  const list = sel.slice(0, 12).map(r => `<li>${esc(r.stem.replace(/_/g, " "))} · ${r.date ? hDate(r.date) : "date unknown"} · ${fmtSize(r.size)}</li>`).join("") +
+  const list = sel.slice(0, 12).map(r => `<li>${esc(r.stem.replace(/_/g, " "))} · ${r.date ? hDate(r.date) : "date unknown"} · ${fmtSize(r.size)}${r.tl ? " + timelapse " + fmtSize(r.tl) : ""}</li>`).join("") +
     (sel.length > 12 ? `<li>… and ${sel.length - 12} more</li>` : "");
   if (!await ask({title: `Delete ${sel.length} job log${sel.length === 1 ? "" : "s"}?`,
-      body: `These logs will be deleted from the printer. This cannot be undone. The print files are not touched.<ul style="margin: 8px 0 0; padding-left: 18px">${list}</ul>`,
+      body: `These logs${sel.some(r => r.tl) ? " and their timelapse films" : ""} will be deleted from the printer (${fmtSize(sel.reduce((a, r) => a + r.size + (r.tl || 0), 0))} freed in total). This cannot be undone. The print files are not touched.<ul style="margin: 8px 0 0; padding-left: 18px">${list}</ul>`,
       ok: `Delete ${sel.length} log${sel.length === 1 ? "" : "s"}`, danger: true})) return;
   try {
     const r = await helper("/api/logdel", sel.map(x => x.name).join("\n"));

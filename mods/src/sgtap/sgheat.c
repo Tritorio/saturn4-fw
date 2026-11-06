@@ -11,9 +11,12 @@
  *     on/off like the touch screen (heater state 3 + RAM flag; refused while printing or
  *     without a working sensor, or at/above the vat limit).
  *   - RESIN MIXING (user, replaces "Plate into the resin"): command "mix MIN" (0 = stop): the build plate goes to Z low (the old
- *     pre-heat position: 6 mm, 3 mm with the factory Z values), then up to Z low + 35 mm and down again, at 5 mm/s over the whole travel, for MIN
+ *     pre-heat position: 6 mm, 3 mm with the factory Z values), then up to Z low + 30 mm and down again, at 5 mm/s over the whole travel, for MIN
  *     minutes counted from the first arrival at Z low; it ends by rising to Z = 50 mm (also after Stop). App's own axis_move (the foreign matter guard acts on the way down); one
  *     move at a time, the next when the app logs "axis 0 is idle". Stop / pre-heat off / print job / guard trip: axis_stop (guard trip / print job: stays put), else Stop / pre-heat off: up to 50 mm.
+ *     FIRST DESCENT TO Z LOW = THE FOREIGN MATTER CHECK: it runs at 2.5 mm/s (as the resin probe) with the app's guard active (cold, viscous resin
+ *     made the 5 mm/s strokes trip the guard on resin drag alone). If it arrives without a trip, the live limit (+0x230) is raised to INT_MAX for the rest of the mixing
+ *     (restored on stop / done / pre-heat off / print job / guard-less exit), and the strokes run at 5 mm/s; live.json heat.mixg = 1 while the guard is ignored.
  *     Idle printer, Z homed, guard armed only. The "heat" command's 5th number (old plate option) is accepted and ignored.
  * Only inside /customer/resources/chitu V1.5.9: every code word below must match before
  * anything is read or written, else heating is off (live.json "heat": null).
@@ -78,8 +81,11 @@ static void sgheat_init(void)
 #define Z_STOP     0x535b8u    /* void axis_stop(int axis): driver stop + queues flushed + position re-read; the app's own stop path calls it for axis 0 (Z) */
 #define Z_ARMED    0x2fdcb4u   /* int (0x2fdc58 + 0x5c): first sg calibration of the session done = foreign matter guard armed */
 #define Z_MIX_SPD  5.0f        /* mm/s, the whole travel */
+#define Z_CHK_SPD  2.5f        /* mm/s: the first descent to Z low (the foreign matter check), as the resin probe of the print start */
+#define Z_LIMIT    (H_MACH + 0x230u) /* int: foreign matter limit (I206 C) the app's guard 0x53ab8 reads at every check */
+#define Z_LIM_OFF  0x7fffffff  /* the limit while the mixing ignores the guard */
 #define Z_END      50.0f       /* mm: where the plate goes when the mixing ends or is stopped */
-#define Z_MIX_SPAN 35.0f       /* mm: Z high = Z low + this */
+#define Z_MIX_SPAN 30.0f       /* mm: Z high = Z low + this */
 #define Z_PRE_FLEX 6.0f        /* mm: plate position while pre-heating (flex plate / not factory values) */
 #define Z_PRE_STD  3.0f        /* mm: the same with the factory Z values (Flex Plate switch off, sgmach.c) */
 static float z_pre_mm(void);   /* sgmach.c */
@@ -87,6 +93,10 @@ static float z_pre_mm(void);   /* sgmach.c */
 static int z_opt;              /* the old plate option: always 0 now (kept for the settings snapshot) */
 static int z_quiet;            /* set by the settings restore: changing the option must not move the plate */
 static int z_st;               /* 0 idle, 4 a mixing stroke is moving, 5 the plate rises to 50 mm at the end or after a stop */
+static int mix_chk;            /* 0 = the first descent (slow, guard active) not done yet, 1 = done: the guard is ignored */
+static int g_off;              /* 1 = we hold the foreign matter limit at Z_LIM_OFF */
+static int g_saved;            /* the app's limit while g_off */
+static int z_lastdown;         /* the move in progress goes down */
 static int mix_ph;             /* 0 off, 1 first move to Z low, 2 up, 3 down */
 static unsigned mix_n;         /* strokes (up + down = 1) */
 static uint64_t mix_end;       /* us: end of the mixing time (0 until the first arrival at Z low) */
@@ -145,8 +155,28 @@ static void z_go(float mm, float speed, double from, int st)
     z_dead = now_us() + (uint64_t)((dist / speed + 20.0) * 1e6);
     z_st = st;
     z_tgt = mm;
+    z_lastdown = mm < from;
     snprintf(z_msg, sizeof z_msg, "%s %.0f mm", mm > from ? "going up to" : "going down to", (double)mm);
     move(0, 0, mm, speed);
+}
+
+/* ignore the foreign matter guard (only after a clean slow descent) / give the app's limit back */
+static void guard_off(void)
+{
+    if (g_off)
+        return;
+    g_saved = (int)HI(Z_LIMIT);
+    HI(Z_LIMIT) = Z_LIM_OFF;
+    g_off = 1;
+}
+
+static void guard_restore(void)
+{
+    if (!g_off)
+        return;
+    if (HI(Z_LIMIT) == Z_LIM_OFF)             /* the user may have changed it meanwhile: then leave it */
+        HI(Z_LIMIT) = (uint32_t)g_saved;
+    g_off = 0;
 }
 
 /* stop the mixing (or any plate move of ours) at once and send the plate up to Z_END */
@@ -156,6 +186,7 @@ static void mix_stop(const char *why)
     const char *w;
     struct timespec ts = {0, 300000000};
     int was = mix_ph || z_st;
+    guard_restore();
     mix_ph = 0;
     z_st = 0;
     if (!was)
@@ -208,10 +239,11 @@ static void sgheat_mix_cmd(const char *c, char *res, size_t len)
     }
     mix_n = 0;
     mix_end = 0;
+    mix_chk = 0;
     mix_dur = (uint64_t)min * 60000000ull;
     if (pos > z_pre_mm() + 0.1 || pos < z_pre_mm() - 0.1) {
         mix_ph = 1;
-        z_go(z_pre_mm(), Z_MIX_SPD, pos, 4);
+        z_go(z_pre_mm(), pos > z_pre_mm() ? Z_CHK_SPD : Z_MIX_SPD, pos, 4);
     } else {
         mix_ph = 2;
         mix_end = now_us() + mix_dur;
@@ -224,6 +256,8 @@ static void sgheat_tick(void)
 {
     double pos;
     const char *why;
+    if (g_off && (!mix_ph || HW(H_PSTATE) == 10 || s_active))
+        guard_restore();
     if (!z_st)
         return;
     if (lg_z_trig != z_trig0) {
@@ -243,6 +277,10 @@ static void sgheat_tick(void)
             z_st = 0;
             snprintf(z_msg, sizeof z_msg, "stopped: %s", why);
         } else if (mix_ph == 1 || mix_ph == 3) {             /* at Z low */
+            if (!mix_chk && z_lastdown) {                    /* the slow descent ended without a trip: no foreign matter */
+                mix_chk = 1;
+                guard_off();
+            }
             if (mix_ph == 1)
                 mix_end = now_us() + mix_dur;
             else
@@ -262,7 +300,7 @@ static void sgheat_tick(void)
             }
         } else {                                              /* at Z high */
             mix_ph = 3;
-            z_go(z_pre_mm(), Z_MIX_SPD, pos, 4);
+            z_go(z_pre_mm(), mix_chk ? Z_MIX_SPD : Z_CHK_SPD, pos, 4);
         }
     } else if (now_us() > z_dead) {
         mix_ph = 0;
@@ -295,11 +333,11 @@ static int sgheat_json(char *buf, size_t len)
         snprintf(ts, sizeof ts, "%.2f", t);
     return snprintf(buf, len, ",\"heat\":{\"t\":%s,\"sensor\":%u,\"ready\":%u,\"state\":%u,"
                     "\"printing\":%d,\"pre\":%u,\"hp\":%u,\"tpre\":%d,\"tprint\":%d,\"max\":%d,"
-                    "\"mix\":%d,\"mixleft\":%d,\"mixn\":%u,\"mixlo\":%.1f,\"mixhi\":%.1f,\"zmove\":%d,\"zmsg\":\"%s\"}",
+                    "\"mixg\":%d,\"mix\":%d,\"mixleft\":%d,\"mixn\":%u,\"mixlo\":%.1f,\"mixhi\":%.1f,\"zmove\":%d,\"zmsg\":\"%s\"}",
                     ts, (unsigned)(HW(H_DEV) != 0), (unsigned)HB(H_DEV + 0x118),
                     (unsigned)HW(H_DEV + 0x114), HW(H_PSTATE) == 10, (unsigned)HB(H_UI + 0x15),
                     (unsigned)HB(H_UI + 0x14), (int)HI(H_MACH + 0x1a0), (int)HI(H_MACH + 0x198),
-                    (int)HI(H_MACH + 0x194), mix_ph, mix_ph == 1 ? -1 : mix_ph ? (int)(mix_end > now_us() ? (mix_end - now_us()) / 1000000 : 0) : 0,
+                    (int)HI(H_MACH + 0x194), g_off, mix_ph, mix_ph == 1 ? -1 : mix_ph ? (int)(mix_end > now_us() ? (mix_end - now_us()) / 1000000 : 0) : 0,
                     mix_n, (double)z_pre_mm(), (double)(z_pre_mm() + Z_MIX_SPAN), z_st, z_msg);
 }
 

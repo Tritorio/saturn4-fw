@@ -29,6 +29,7 @@
 #                          values patched into it, its CRC recomputed, written + read back -> {"ok":true,"n":..,"backup":".."}
 #   POST /api/machine/restore  body "<backup file name>": the backup (CRC checked) becomes the saved file
 #   POST /api/machine/delete body "<backup file name>": deletes that backup from sglog/machine_backups
+#   POST /api/tldel        body "<job log name>\n...": deletes only the timelapse film of those jobs (the logs stay)
 #   POST /api/logdel       body "<job log name>\n...": deletes job logs (<date>_<name>.csv / boot<n>_<name>.csv)
 #                          and their .txt, never the running job's; tilt_*.csv are not touched
 #   (cmd "mset NAME OLD NEW" = one live machine setting, libsgtap sgmach.c)
@@ -644,6 +645,32 @@ proc handle {c method path query host body origin} {
             log "job logs deleted: $n, skipped: [llength $skipped]"
             reply $c 200 "{\"ok\":true,\"deleted\":$n,\"skipped\":[llength $skipped]}"
         }
+        "POST /api/tldel" {
+            set running ""
+            catch {
+                set f [open $livedir/live.json]
+                set txt [$f read]
+                $f close
+                regexp {"job":\{"active":1,"phase":"[^"]*","layer":-?[0-9]+,"csv":"([^"]*)"} $txt -> running
+            }
+            set n 0
+            set skipped {}
+            foreach l [split $body \n] {
+                set name [string trim $l]
+                if {$name eq ""} continue
+                if {![regexp {^(boot[0-9]+|[0-9]{8}_[0-9]{6})_[A-Za-z0-9_.-]+\.csv$} $name] || $name eq $running} {
+                    lappend skipped $name
+                    continue
+                }
+                set had 0
+                foreach fn [list $csvdir/[file rootname $name].h264 /media/mmcblk0p3/.timelapse/[file rootname $name].h264] {
+                    if {[file exists $fn]} { file delete $fn; set had 1 }
+                }
+                incr n $had
+            }
+            log "timelapses deleted: $n, skipped: [llength $skipped]"
+            reply $c 200 "{\"ok\":true,\"deleted\":$n,\"skipped\":[llength $skipped]}"
+        }
         "POST /api/clock" {
             set t [string trim $body]
             if {![regexp {^(20[0-9][0-9])-([01][0-9])-([0-3][0-9]) ([0-2][0-9]):([0-5][0-9]):([0-5][0-9])$} $t -> y mo d h mi se] ||
@@ -666,7 +693,7 @@ proc handle {c method path query host body origin} {
             reply $c 200 "{\"ok\":true,\"id\":\"[send_cmd "k $k"]\"}"
         }
         default {
-            if {$path in {/ /index.html /api/ping /api/stock/check /api/stock/restore /api/password /api/cmd /api/calib /api/slow /api/slowdel /api/resin /api/resindel /api/fprof /api/profdel /api/flex /api/machine /api/machine/restore /api/machine/delete /api/logdel /api/clock}} {
+            if {$path in {/ /index.html /api/ping /api/stock/check /api/stock/restore /api/password /api/cmd /api/calib /api/slow /api/slowdel /api/resin /api/resindel /api/fprof /api/profdel /api/flex /api/machine /api/machine/restore /api/machine/delete /api/logdel /api/tldel /api/clock}} {
                 err $c 405 "method not allowed"
             } else {
                 err $c 404 "not found"
