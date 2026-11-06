@@ -3,7 +3,7 @@
  *   sgcam [-p HTTPPORT] [-u UDPPORT] [-r RTSPHOST] [-l LIVEDIR]
  *
  * It listens on HTTPPORT (default 8091) and does NOTHING with the camera until a viewer asks:
- *   GET /cam[?print=1]  the stream; without print=1 only while the printer is idle, with it also during a print (user: "let's try")
+ *   GET /cam[?print=1]  the stream; without print=1 only while the printer is idle, with it also during a print ("let's try")
  *   (GET /cam         the stream (video/mp4, chunked): init segment, then one fragment per frame, from the first key frame on.
  *                    The answer headers carry X-Codec (avc1.PPCCLL) for MediaSource.addSourceBuffer.
  *   GET /status      {"idle":0|1,"busy":0}

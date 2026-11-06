@@ -1,5 +1,5 @@
 #!/bin/sh
-# ONE-SHOT test (user OK ): in the next wait after retract (P+0x30b == 2) write the exposure time P+0x24c = $1 ms (float) for that layer only.
+# ONE-SHOT test: in the next wait after retract (P+0x30b == 2) write the exposure time P+0x24c = $1 ms (float) for that layer only.
 # Usage on the printer: sh expo_write_once.sh 5000   (log: /tmp/expo_write.txt). Refuses outside a wait, stops after one write or after 20 min.
 V=${1:?ms}; OUT=/tmp/expo_write.txt
 M=; for p in $(pidof chitu); do M=/proc/$p/mem; done

@@ -38,7 +38,7 @@
 
 #define CSV_TOTAL_MAX  (200u << 20)
 #define CSV_FILE_MAX   (50u << 20)
-#define HIST           4096           /* ~13.6 min of readings at 5 Hz (user: the Dynamic wait window has no 3 s limit any more; was 64 = ~12 s) */
+#define HIST           4096           /* ~13.6 min of readings at 5 Hz (the Dynamic wait window has no 3 s limit any more; was 64 = ~12 s) */
 
 /* sgweb.c (live feed, tare), #included after this file */
 static void sgweb_session_start(void);

@@ -1,5 +1,5 @@
 /*
- * sgwtest.c - "Wait Times Testing" (user, Developer card), #included by sgtap.c after sgtilt.c.
+ * sgwtest.c - "Wait Times Testing" (Developer card), #included by sgtap.c after sgtilt.c.
  *
  * A simulated print job without UV, driven by our own sequencer with the app's own axis_move (Z_MOVE) / axis_stop (Z_STOP), as the resin mixing and
  * Tilt Move do. Command "wtest start H N" (layer height mm 0.010-0.200, N layers 1-999) / "wtest stop". Idle printer only (not printing, Z and tilt homed,
@@ -12,8 +12,8 @@
  *   probe     (from a higher park position first down to the probe start height at 5 mm/s) down at the probe speed (guard active) until the reading is above the trigger, at most to the probe end position; 0.3 mm back up
  *   level     down to the level start (level speed), 5 s still, then steps of the level step size (level speed), 1 s still after each, until the
  *             reading is above the level threshold or the level end position is reached: the plate position = the contact Z0
- *   layers the plate rises to Z0 + H (the first layer's height, 5 mm/s) and the WAIT of layer 0 follows at once, no tilt cycle before it (user,
- *             as in the app's log of a print: after the levelling the plate waits, then exposes); then for every layer 1 .. N-1 as in a print (user, app log of a real print): the tilt
+ *   layers the plate rises to Z0 + H (the first layer's height, 5 mm/s) and the WAIT of layer 0 follows at once, no tilt cycle before it (
+ *             as in the app's log of a print: after the levelling the plate waits, then exposes); then for every layer 1 .. N-1 as in a print (app log of a real print): the tilt
  *             releases (0 -> 140); when it has arrived the plate rises one layer height (lift distance = layer height, user: so the app's
  *             second Z move after the return has no distance and is left out) (Z0 + (n+1) * H, at the Z initial speed: about 1 s for
  *             0.05 mm) and the tilt return (140 -> 0) starts at the same moment; both with the stages of the live tilt profile (T_PROF: layers <= N use

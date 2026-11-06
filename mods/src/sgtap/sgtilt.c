@@ -1689,7 +1689,7 @@ static void sgtilt_fix_cmd(const char *c, char *res, size_t len)
 /* wait thread, at the start of every wait after retract: layer0 = the app's layer (0-based).
  * The list is read again each time (once per layer), so an edit applies to the next layer. */
 /* the layer list of the file being printed -> sl.stem / sl.nr / sl.nl (takes sl_lock itself). Called at every wait and every
- * 2 s while a job runs, so the dashboard never shows the list of the previous print (user bug report ). */
+ * 2 s while a job runs, so the dashboard never shows the list of the previous print. */
 static void sl_read_list(void)
 {
     static char buf[SL_MAXF];                     /* under sl_lock */
@@ -1835,7 +1835,7 @@ static void sgtilt_dump_cmd(char *res, size_t len)
     snprintf(res, len, "ok: %s", path);
 }
 
-/* "tiltreg ...": live experiments with the tilt driver's settings (user: the motor is loud, the slower the louder).
+/* "tiltreg ...": live experiments with the tilt driver's settings (the motor is loud, the slower the louder).
  * Plain register writes under the app's SPI mutex, effective at once, lost at the next power cycle (or `tiltreg stock`).
  *   tiltreg status                      CS_ACTUAL / DRV_STATUS, the app's current ramp (now / target), ramp flag
  *   tiltreg stock                       GCONF 4, CHOPCONF 0x100c3, PWMCONF 0x504c8, IHOLD_IRUN as the app has it now
@@ -1845,7 +1845,7 @@ static void sgtilt_dump_cmd(char *res, size_t len)
  *   tiltreg chop TOFF TBL HSTRT HEND    CHOPCONF: TOFF 1-15 (0 = driver off, refused; 1 needs TBL >= 2), TBL 0-3, HSTRT 0-7, HEND 0-15 with
  *                                       (HSTRT+1)+(HEND-3) <= 16 i.e. HSTRT+HEND <= 18 (datasheet: refuse); stock 3 2 4 1;
  *                                       microsteps (256) and vsense are never written
- *   tiltreg irun N                      IRUN 1..the run current the machine settings give (user: never higher than set), IHOLD as now
+ *   tiltreg irun N IRUN 1..the run current the machine settings give (never higher than set), IHOLD as now
  *   tiltreg wave P                      microstep wave table f = sin t + a sin 3t, a = P / 100 %, P in -9 -6 -3 0 3 6 9 12 (0 = the chip's default sine);
  *                                       peak current unchanged (table peak 247), average torque unchanged, a 4th-harmonic torque ripple of +-a
  *                                       (can cancel the motor's full-step cogging; tools/mslut.py makes the tables). MSLUT0-7 0x60-0x67,

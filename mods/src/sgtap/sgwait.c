@@ -293,7 +293,7 @@ static void sgwait_load(void)
         wset.min = m;
     }
     snprintf(path, sizeof path, "%s/%s", sg_csvdir, WOV_FILE);
-    wov.on = 1;                        /* the slicer wait is always ignored while the dynamic wait is active (user: no switch; file WAITOV unused) */
+    wov.on = 1;                        /* the slicer wait is always ignored while the dynamic wait is active (no switch; file WAITOV unused) */
     snprintf(path, sizeof path, "%s/%s", sg_csvdir, WMIN2_FILE);
     wm2.min2 = wset.min;               /* no WAIT2 file: the one minimum of the file WAIT for the whole print */
     if (read_small(path, buf, sizeof buf) > 0) {
@@ -666,7 +666,7 @@ static int heater_on(void)
     return 0;
 }
 
-/* THERMOSTAT of a heated wait (user: during the wait test the vat kept rising above the target): the app's heater mode 2 (pulse, what Wait & heat
+/* THERMOSTAT of a heated wait (during the wait test the vat kept rising above the target): the app's heater mode 2 (pulse, what Wait & heat
  * sets) has no temperature control, so a long wait heated without end. While a wait is heated we hold the "heating during print" target (live +0x198): the
  * heater goes off (mode 0) at the target and back on (mode 2) 0.5 C below it. Called at 20 Hz while *on_flag (wc.heating / wt_heated) is set; *off_by_gov
  * remembers that WE switched it off. A stop of the wait (heater_off / wt_heater_off) still sets mode 0 only if it is 2. */
@@ -893,7 +893,7 @@ static double zm_now_mm(int *ok);
 static char tl_job[256];
 static int tl_on, tl_sock = -1;
 static double tl_minz = TL_MIN_Z;
-/* WHEN the trigger goes out (user: the picture was not synchronised with the end of the retract). The camera needs about TL_LAG_MS from the
+/* WHEN the trigger goes out (the picture was not synchronised with the end of the retract). The camera needs about TL_LAG_MS from the
  * trigger to a picture (RTSP session + the encoder's next key frame, measured 2.26 s after PLAY), so a trigger sent when the wait starts gives a picture
  * from the exposure. The time from the END OF THE EXPOSURE to the start of the next wait (lift + peel + retract) is mechanical and repeats from layer to
  * layer: it is measured every cycle and the next trigger is sent (that time + TL_AFTER_MS - lag) after the next exposure end, so the key frame lands
@@ -907,7 +907,7 @@ static long tl_D = -1;            /* ms from an exposure end to the next wait st
 static uint64_t tl_fire;          /* app ms the scheduled trigger goes out (0 = none) */
 static uint64_t tl_ideal;         /* app ms the picture should show */
 static int tl_fire_layer, tl_sent, tl_ex_prev;
-/* Z anchor (user: Z moves once per layer, about one layer thickness, whatever the tilt speeds): the first tick the Z position differs from the
+/* Z anchor (Z moves once per layer, about one layer thickness, whatever the tilt speeds): the first tick the Z position differs from the
  * exposure's Z is "Z step seen". The time from there to the next wait start is measured too; when it is long enough for the camera lag the trigger is
  * scheduled from the Z step (the release tilt, the part dynamic lift changes, is then not in the interval), else from the exposure end. Both intervals
  * go to /tmp/sgtl.log, one line per wait. */

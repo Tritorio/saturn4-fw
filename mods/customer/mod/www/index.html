@@ -512,7 +512,7 @@
   #wza { grid-area: za; } #wzb { grid-area: zb; }
   .wzone { display: flex; flex-direction: column; min-width: 0; }
   /* work area: every card except Force is half width (as Dynamic wait / Dynamic lift) and the cards are packed in two columns, each as
-     tall as it needs to be, so there are no empty pockets (user; before: a grid with equal row heights and the Tilt speed /
+     tall as it needs to be, so there are no empty pockets (before: a grid with equal row heights and the Tilt speed /
      Slow layers / Login / Settings / Machine settings cards full width). #wfull stays in the script but is no longer used. */
   /* Camera card (live view on): single column = right under the Status card (DOM order); two columns (900-1199 px) = on top of the right column,
      next to the Status card; three columns (from 1200 px) = beside the Force card (both are the first two cards of the masonry, script WIDE.camPlace) */
@@ -3717,7 +3717,7 @@ $("fxon").addEventListener("click", () => fxApply(true));
 $("fxopen").addEventListener("click", () => fxOpen(!FX.open));
 $("fxclose").addEventListener("click", () => fxOpen(false));
 
-// ---------- Two columns: always on (user, no switch); from 900 px the cards are moved into two columns ----------
+// ---------- Two columns: always on (no switch); from 900 px the cards are moved into two columns ----------
 const WIDE = {mq: window.matchMedia("(min-width: 900px)"), active: false, cols: []};
 (function () {
   const lay = document.querySelector(".layout");

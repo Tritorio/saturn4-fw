@@ -10,7 +10,7 @@
  *     app's own saver (machine_param_ref.bin), H -> live ui param + ui saver; pre-heat
  *     on/off like the touch screen (heater state 3 + RAM flag; refused while printing or
  *     without a working sensor, or at/above the vat limit).
- *   - RESIN MIXING (user, replaces "Plate into the resin"): command "mix MIN" (0 = stop): the build plate goes to Z low (the old
+ *   - RESIN MIXING (replaces "Plate into the resin"): command "mix MIN" (0 = stop): the build plate goes to Z low (the old
  *     pre-heat position: 6 mm, 3 mm with the factory Z values), then up to Z low + 30 mm and down again, at 5 mm/s over the whole travel, for MIN
  *     minutes counted from the first arrival at Z low; it ends by rising to Z = 50 mm (also after Stop). App's own axis_move (the foreign matter guard acts on the way down); one
  *     move at a time, the next when the app logs "axis 0 is idle". Stop / pre-heat off / print job / guard trip: axis_stop (guard trip / print job: stays put), else Stop / pre-heat off: up to 50 mm.

@@ -58,7 +58,7 @@ static int zm_zero_mm(double *zero)
     return *zero > -1 && *zero < 30;
 }
 
-/* <csvdir>/LEVELS.csv: one line per job, written at its first layer = the result of the levelling of that job (user: is Z consistent among print
+/* <csvdir>/LEVELS.csv: one line per job, written at its first layer = the result of the levelling of that job (is Z consistent among print
  * jobs? could the levelling be skipped / a custom start Z be used?). Never deleted by the job history, never needs the job log. Columns: time_utc, print_file,
  * zero_machine (I0 A0 Y after the levelling), zero_axis (the Z axis' own copy, only refreshed at a restart), z_first (plate position at layer 1, machine coordinate),
  * z_target (the app's target Z of layer 1 = zero_machine + the file's first layer height). */

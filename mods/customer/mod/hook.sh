@@ -48,7 +48,7 @@ for a in $(cat $M/blackhole_ips); do blackhole "$a"; done
 # OTA watch (read only): U-Boot flashes the eMMC copy when this is 1
 log "EMMCUpgradeEnable=$(/etc/fw_printenv -n EMMCUpgradeEnable 2>/dev/null)"
 
-# 8.23: the printer's clock is the router's time (user: the printer's internet is blocked at the
+# 8.23: the printer's clock is the router's time (the printer's internet is blocked at the
 # router, so NTP never worked and the clock stayed at 1970). The router's web server (port 80) sends a Date
 # header with ITS LOCAL TIME (labelled GMT); the printer takes it as it is, no time zone, so the printer shows
 # what the router shows (summer time included). The system clock is therefore the router's wall time.

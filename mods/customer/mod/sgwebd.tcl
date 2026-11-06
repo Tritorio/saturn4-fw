@@ -50,7 +50,7 @@
 # LOGIN: every POST except /api/login, /api/logout and /api/clock needs the header
 #   X-SG-Token: <32 hex> from POST /api/login (body = the printer password, same 5-wrong lock; answer {"ok":true,"token":..,"ttl":s});
 #   missing / unknown = 401 {"error":"login required"}. Tokens live in memory only (a restart ends all logins), at most 20; a login has NO
-#   time limit (user: it ends by log out, a restart or a password change). GET /api/session -> {"in":b,"left":s,"ttl":s}
+#   time limit (it ends by log out, a restart or a password change). GET /api/session -> {"in":b,"left":s,"ttl":s}
 #   (left / ttl = a huge constant), POST /api/logout (this login), POST /api/logout_all.
 #   GET  /api/ping
 # Answers carry Access-Control-Allow-Origin: * (the page lives on another port).
