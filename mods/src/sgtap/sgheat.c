@@ -93,6 +93,7 @@ static float z_pre_mm(void);   /* sgmach.c */
 static int z_opt;              /* the old plate option: always 0 now (kept for the settings snapshot) */
 static int z_quiet;            /* set by the settings restore: changing the option must not move the plate */
 static int z_st;               /* 0 idle, 4 a mixing stroke is moving, 5 the plate rises to 50 mm at the end or after a stop */
+static volatile int wt_busy;      /* 1 = a Wait Times Testing run owns the plate and the tilt (sgwtest.c) */
 static int mix_chk;            /* 0 = the first descent (slow, guard active) not done yet, 1 = done: the guard is ignored */
 static int g_off;              /* 1 = we hold the foreign matter limit at Z_LIM_OFF */
 static int g_saved;            /* the app's limit while g_off */
@@ -225,6 +226,10 @@ static void sgheat_mix_cmd(const char *c, char *res, size_t len)
             mix_stop("mixing stopped");
         return;
     }
+    if (wt_busy) {
+        snprintf(res, len, "error: a wait test is running");
+        return;
+    }
     if (mix_ph || z_st) {
         snprintf(res, len, "error: the plate is still moving");
         return;
@@ -331,11 +336,11 @@ static int sgheat_json(char *buf, size_t len)
         return snprintf(buf, len, ",\"heat\":null");
     if (sgheat_temp(&t))
         snprintf(ts, sizeof ts, "%.2f", t);
-    return snprintf(buf, len, ",\"heat\":{\"t\":%s,\"sensor\":%u,\"ready\":%u,\"state\":%u,"
+    return snprintf(buf, len, ",\"heat\":{\"t\":%s,\"sensor\":%u,\"ready\":%u,\"state\":%u,\"on\":%d,"
                     "\"printing\":%d,\"pre\":%u,\"hp\":%u,\"tpre\":%d,\"tprint\":%d,\"max\":%d,"
                     "\"mixg\":%d,\"mix\":%d,\"mixleft\":%d,\"mixn\":%u,\"mixlo\":%.1f,\"mixhi\":%.1f,\"zmove\":%d,\"zmsg\":\"%s\"}",
                     ts, (unsigned)(HW(H_DEV) != 0), (unsigned)HB(H_DEV + 0x118),
-                    (unsigned)HW(H_DEV + 0x114), HW(H_PSTATE) == 10, (unsigned)HB(H_UI + 0x15),
+                    (unsigned)HW(H_DEV + 0x114), lg_heat_on && HW(H_DEV + 0x114) != 0, HW(H_PSTATE) == 10, (unsigned)HB(H_UI + 0x15),
                     (unsigned)HB(H_UI + 0x14), (int)HI(H_MACH + 0x1a0), (int)HI(H_MACH + 0x198),
                     (int)HI(H_MACH + 0x194), g_off, mix_ph, mix_ph == 1 ? -1 : mix_ph ? (int)(mix_end > now_us() ? (mix_end - now_us()) / 1000000 : 0) : 0,
                     mix_n, (double)z_pre_mm(), (double)(z_pre_mm() + Z_MIX_SPAN), z_st, z_msg);

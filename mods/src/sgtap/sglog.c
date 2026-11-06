@@ -38,7 +38,7 @@
 
 #define CSV_TOTAL_MAX  (200u << 20)
 #define CSV_FILE_MAX   (50u << 20)
-#define HIST           64             /* ~12 s of readings at 5 Hz */
+#define HIST           4096           /* ~13.6 min of readings at 5 Hz (user: the Dynamic wait window has no 3 s limit any more; was 64 = ~12 s) */
 
 /* sgweb.c (live feed, tare), #included after this file */
 static void sgweb_session_start(void);
@@ -258,7 +258,8 @@ static void sglog_on_read(int fd, const unsigned char *p, size_t n)
 
 /* ---- session / CSV (writer thread only) ---- */
 static int s_active, s_pending;       /* pending: CSV opens 1 s after the start line */
-static volatile unsigned lg_z_idle, lg_z_trig;   /* app log: "axis 0 is idle" / "sg_trig" lines seen (sgheat.c plate move) */
+static volatile int lg_heat_on;                 /* the app's tank heater output: 1 after "heat_control on", 0 after "heat_control off" (shown as the yellow dot in the Status card) */
+static volatile unsigned lg_z_idle, lg_x_idle, lg_z_trig;   /* app log: "axis 0 is idle" / "sg_trig" lines seen (sgheat.c plate move) */
 static uint64_t s_idle_tick;           /* log tick of the first of the consecutive IDLE state lines, 0 = none */
 static uint64_t s_start_us;
 static int s_layer = -1;
@@ -342,7 +343,7 @@ static int cmp_i32(const void *a, const void *b)
 
 static void session_start(uint64_t start_us)
 {
-    int32_t v[HIST];
+    int32_t v[64];                                /* the readings of 2 s (~10); not HIST: it is 4096 now */
     int n = 0;
     s_active = 1;
     s_idle_tick = 0;
@@ -354,7 +355,7 @@ static void session_start(uint64_t start_us)
     pthread_mutex_lock(&glock);
     for (unsigned i = 0; i < HIST && i < hpos; i++) {
         unsigned k = (hpos - 1 - i) % HIST;
-        if (hist[k].ts <= start_us && hist[k].ts + 2000000u >= start_us)
+        if (n < 64 && hist[k].ts <= start_us && hist[k].ts + 2000000u >= start_us)
             v[n++] = hist[k].raw / 100;
     }
     s_zero = n ? 0 : (g_have ? g_last / 100 : 0);
@@ -648,8 +649,14 @@ static void log_line(char *l)
         lg_lift2++;
     if (strstr(m, "axis 0 is idle"))
         lg_z_idle++;
-    else if (strstr(m, "sg_trig"))
+    else if (strstr(m, "axis 1 is idle"))
+        lg_x_idle++;
+    else if (strncmp(m, "sg_trig ", 8) == 0)       /* a REAL trip ("sg_trig 1" / "sg_trig 2"); NOT the per-check lines "foregin zero .. sg_trigered 0" */
         lg_z_trig++;
+    if (strncmp(m, "heat_control on", 15) == 0)
+        lg_heat_on = 1;
+    else if (strstr(m, "heat_control off"))
+        lg_heat_on = 0;
     if (!s_active)
         return;
     alert_scan(m);

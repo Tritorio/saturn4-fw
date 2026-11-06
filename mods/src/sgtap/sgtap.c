@@ -175,6 +175,7 @@ static int matches(const char *path)
 #include "sgzmon.c"
 #include "sgdl.c"
 #include "sgtilt.c"
+#include "sgwtest.c"
 #include "sgsys.c"
 #include "sgmach.c"
 #ifdef SGTAP_AA

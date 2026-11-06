@@ -18,3 +18,8 @@ RE helpers (ARM/Thumb xrefs for chitu, text vaddr 0x10000 = file 0): tools/re/ax
                         2026-10-22: --ranges A-B,C-D (default = lowest / highest force 20 layer windows) adds peak angle per layer and a force-vs-angle
                         plot (angle = constant-speed model from the app log values + measured release time; resolution = the 0.5 s CSV row,
                         +-0.25 s x speed). For better resolution: raw capture (sgcap/ENABLE) + TILTTRACE during the layers of interest.
+- settle_rules_cmp.py JOB.csv [JOB2.csv ..]   (2026-11-06) replays settle rules on the logged waits of job CSVs (0.5 s rows; wait = rows of phase 'layer' before the
+                        first row with wait_end): slope rules A (|LSQ slope| < GRAD over WIN s, min 2 s) and an exponential-fit "remaining change < X g" rule B,
+                        reports fire time (% of the actual wait) and the excess of the reading over the plateau (last 1.5 s of the logged wait). Needs numpy + scipy
+                        (system python3). settle_rules_table.py = per-wait table; settle_rules_lib.py = the functions. Result 2026-11-06: B fires far too early
+                        (decay is multi-exponential, +3..6 g median excess); A .3/2 reproduces the printer's waits (checked on layers of 'Variable height test').

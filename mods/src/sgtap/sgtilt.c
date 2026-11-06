@@ -1397,6 +1397,10 @@ static void sgtilt_xmove_cmd(const char *c, char *res, size_t len)
         snprintf(res, len, "error: %s", why);
         return;
     }
+    if (wt_busy) {
+        snprintf(res, len, "error: a wait test is running");
+        return;
+    }
     if (xm_busy && now_us() < xm_until) {
         snprintf(res, len, "error: the tilt is still moving");
         return;

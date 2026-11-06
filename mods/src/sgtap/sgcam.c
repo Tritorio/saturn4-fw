@@ -1270,6 +1270,7 @@ int main(int argc, char **argv)
         else
             return 2;
     }
+    if (nice(19) < 0) {}                       /* the whole relay: the stream never competes with the printer app; the capture child inherits it */
     struct sigaction sa = {0};
     sa.sa_handler = on_sig;
     sigaction(SIGINT, &sa, NULL);

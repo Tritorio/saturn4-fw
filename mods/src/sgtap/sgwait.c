@@ -6,7 +6,7 @@
  *   P+0x30b (u8) = 2 while waiting, P+0x318 (u64) = wait start (CLOCK_MONOTONIC_RAW ms),
  *   exposure when now - start > P+0x25c + P+0x250 (float ms). P+0x2ac = layer.
  * Dynamic wait: our thread (20 Hz) watches each wait and, once the force is settled
- * (least-squares gradient of the readings over the last WIN s below GRAD g/s, at least MIN s
+ * (force change over the last WIN s = least-squares slope of the readings * WIN, below GRAD g [user: was GRAD g/s], at least MIN s
  * after the start), writes P+0x25c = elapsed - P+0x250: the app's own next pass starts the
  * exposure. The wait can only get shorter than the slicer's (= the maximum). The original
  * value is put back when the wait is over. Bottom layers: dynamic too, unless DB = 0 (then the
@@ -75,6 +75,15 @@ static const struct { uint32_t a, w; } w_sig[] = {
  * thread sees it (20 Hz). */
 #define WOV_FILE "WAITOV"
 #define WOV_CEIL_MS 6.0e5               /* user: 10 min */
+#define WOV_NOCEIL_FILE "WAITNOMAX"      /* TEST SWITCH: <csvdir>/WAITNOMAX present = no 10 min ceiling (1e9 ms ~ 11 days, fits the app's 32-bit ms value);
+                                            delete the file to get the ceiling back (checked at every wait start) */
+#define WOV_NOCEIL_MS 1.0e9
+static double wov_ceil_ms(void)
+{
+    char path[256];
+    snprintf(path, sizeof path, "%s/%s", sg_csvdir, WOV_NOCEIL_FILE);
+    return access(path, F_OK) == 0 ? WOV_NOCEIL_MS : WOV_CEIL_MS;
+}
 static struct { int on; } wov = {0};
 /* second minimum wait: from layer N (1-based) to the end the minimum is MIN2, before it wset.min; N = 0 (or 1): MIN2 for
  * the whole print (wset.min is then unused: a "wait" command / snapshot restore with N = 0 sets MIN2 to the same value).
@@ -140,7 +149,7 @@ static uint64_t mono_raw_ms(void)      /* the app's clock (0xd2db0) */
 
 static int valid_wait(double grad, double win, double min)
 {
-    return grad >= 0.2 && grad <= 5.0 && win >= 0.6 && win <= 3.0 && min >= 1.0;      /* no upper limit on the minimum wait */
+    return grad >= 0.05 && grad <= 20.0 && win >= 0.6 && win <= 600.0 && min >= 1.0;      /* no upper limit on the minimum wait */
 }
 
 /* up to max numbers separated by spaces, then the end of the line: count, -1 = junk */
@@ -657,8 +666,31 @@ static int heater_on(void)
     return 0;
 }
 
+/* THERMOSTAT of a heated wait (user: during the wait test the vat kept rising above the target): the app's heater mode 2 (pulse, what Wait & heat
+ * sets) has no temperature control, so a long wait heated without end. While a wait is heated we hold the "heating during print" target (live +0x198): the
+ * heater goes off (mode 0) at the target and back on (mode 2) 0.5 C below it. Called at 20 Hz while *on_flag (wc.heating / wt_heated) is set; *off_by_gov
+ * remembers that WE switched it off. A stop of the wait (heater_off / wt_heater_off) still sets mode 0 only if it is 2. */
+#define W_GOV_HYST 0.5
+static void heat_govern(int *off_by_gov)
+{
+    double c;
+    int tgt = HI(H_MACH + 0x198);
+    if (!h_ok || tgt < 20 || tgt > 60 || !sgheat_temp(&c))
+        return;
+    if (!*off_by_gov && c >= (double)tgt && HW(H_DEV + 0x114) == 2) {
+        HW(H_DEV + 0x114) = 0;
+        *off_by_gov = 1;
+    } else if (*off_by_gov && c <= (double)tgt - W_GOV_HYST && HW(H_DEV + 0x114) == 0) {
+        HW(H_DEV + 0x114) = 2;
+        *off_by_gov = 0;
+    }
+}
+
+static int w_gov_off;                  /* the dynamic wait's heater is off because of the thermostat */
+
 static void heater_off(double el)
 {
+    w_gov_off = 0;
     if (!wc.heating)
         return;
     if (HW(H_DEV + 0x114) == 2)
@@ -729,10 +761,11 @@ static void begin_wait(uintptr_t P, uint64_t t0, uint64_t now_ms)
         off = 1, wc.max_ms = 0;                    /* hands off this wait */
     wc.slicer_ms = (double)wc.orig + wc.extra;
     if (!off && wov.on && wset.dw && (!wc.bottom || wset.db)) {
-        float v = (float)(WOV_CEIL_MS - wc.extra);
+        double ceil_ms = wov_ceil_ms();
+        float v = (float)(ceil_ms - wc.extra);
         HF(P + W_WAIT) = v;            /* the slicer wait is ignored: the wait runs until it has settled (or the ceiling) */
         wc.written = v;                /* finish_wait puts the slicer value back */
-        wc.max_ms = WOV_CEIL_MS;
+        wc.max_ms = ceil_ms;
         wc.ovd = 1;
     }
     wc.handsoff = off;
@@ -769,11 +802,13 @@ static void step_wait(uintptr_t P, uint64_t now_ms)
     }
     double el = now_ms > wc.t0 ? (double)(now_ms - wc.t0) : 0, g = -1, mean = 0;
     int watch = wc.dyn || (wset.wt && !wc.handsoff);  /* the settle test is needed */
+    if (wc.heating && !wc.settled)
+        heat_govern(&w_gov_off);
     if (wc.heating && el >= wc.max_ms - W_GAP_MS - W_POLL_MS)  /* slicer wait about to end */
         heater_off(el);
     if (watch && !wc.settled && el >= wset.win * 1000) {
         g = settle_grad(wset.win, &mean);
-        if (g >= 0 && g < wset.grad && el >= wait_min_for(wc.layer) * 1000) {
+        if (g >= 0 && g * wset.win < wset.grad && el >= wait_min_for(wc.layer) * 1000) {   /* force change over the window (g) = slope * window */
             wc.settled = 1;
             wc.settle_ms = el;
             if (wset.wt) {             /* tare in the wait: new zero at the settled level */
@@ -970,6 +1005,8 @@ static void sgtl_cmd(const char *c, char *res, size_t len)
     }
 }
 
+static void sgwtest_poll(void);
+
 static void *wait_thread(void *arg)
 {
     struct timespec next;
@@ -1060,6 +1097,7 @@ static void *wait_thread(void *arg)
             sgexpo_step(P, now_ms);
             sgzmon_step(P, now_ms);
         }
+        sgwtest_poll();                           /* Wait Times Testing sequencer (sgwtest.c), 20 Hz */
         next.tv_nsec += 50000000;                 /* 20 Hz */
         if (next.tv_nsec >= 1000000000) {
             next.tv_nsec -= 1000000000;

@@ -65,6 +65,8 @@ static void sgtilt_gsync_get(int *on, int *au, int *off);
 static void sgtilt_dl_cmd(const char *c, char *res, size_t len);
 static void sgtilt_mode_cmd(const char *c, char *res, size_t len);
 static void sgtilt_xmove_cmd(const char *c, char *res, size_t len);
+static void sgwtest_cmd(const char *c, char *res, size_t len);
+static int sgwtest_json(char *buf, size_t len);
 static int sgtilt_tc_get(double v[13], int *on);
 static void sgtilt_tc_set(const double v[13], int on);
 static void sgtilt_dl_get(int v[5]);
@@ -389,6 +391,8 @@ static void run_cmd(const char *id, char *c)
     } else if (strncmp(c, "joblog ", 7) == 0) {
         if (c[7] == '0' || c[7] == '1')
             joblog_set(c[7] == '1');
+    } else if (strncmp(c, "wtest ", 6) == 0) {
+        sgwtest_cmd(c + 6, cmd_res, sizeof cmd_res);
     } else if (strncmp(c, "xmove ", 6) == 0) {
         sgtilt_xmove_cmd(c + 6, cmd_res, sizeof cmd_res);
     } else if (strncmp(c, "tiltmode ", 9) == 0) {
@@ -545,6 +549,8 @@ static void write_live(void)
         len += sgexpo_json(buf + len, sizeof buf - (size_t)len);
     if (len < (int)sizeof buf)
         len += sgzmon_json(buf + len, sizeof buf - (size_t)len);
+    if (len < (int)sizeof buf)
+        len += sgwtest_json(buf + len, sizeof buf - (size_t)len);
     if (len < (int)sizeof buf)
         len += sgsys_json(buf + len, sizeof buf - (size_t)len);
     if (len < (int)sizeof buf)

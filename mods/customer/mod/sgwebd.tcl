@@ -31,6 +31,7 @@
 #   POST /api/machine/delete body "<backup file name>": deletes that backup from sglog/machine_backups
 #   POST /api/tldel        body "<job log name>\n...": deletes only the time-lapse of those jobs (the logs stay)
 #   POST /api/logdel       body "<job log name>\n...": deletes job logs (<date>_<name>.csv / boot<n>_<name>.csv)
+#   POST /api/wtdel        body "<wait test log name>\n...": deletes sglog/waittest/waittest_<h>mm_<date>_<time>.csv (not the one being written)
 #                          and their .txt, never the running job's; tilt_*.csv are not touched
 #   (cmd "mset NAME OLD NEW" = one live machine setting, libsgtap sgmach.c)
 #   (cmd "lcdswap NAME RESET" = replace the image of a running lcdshow, RESET 0/1; cmd "lcdshow NAME UV SECS" / "lcdoff": show a stream image on the exposure LCD with the UV off (UV 0) or up to 100 %,
@@ -260,7 +261,7 @@ proc valid_t {t max} {
 
 # dynamic wait: same ranges as libsgtap (sgwait.c)
 proc valid_wait {g w m} {
-    expr {$g >= 0.2 && $g <= 5 && $w >= 0.6 && $w <= 3 && $m >= 1}
+    expr {$g >= 0.05 && $g <= 20 && $w >= 0.6 && $w <= 600 && $m >= 1}
 }
 
 # tilt profile: same ranges as libsgtap (sgtilt.c tp_valid)
@@ -451,6 +452,7 @@ proc handle {c method path query host body origin} {
             } elseif {[regexp {^mx set ([0-9]{1,5}(\.[0-9]{1,3})?) ([0-9]{1,5}(\.[0-9]{1,3})?) ([0-9]{1,5}(\.[0-9]{1,3})?) ([0-9]{1,5}(\.[0-9]{1,3})?) [01] [01]$} $cmd]} {
                 foreach mxt [lrange [split $cmd " "] 2 5] { if {$mxt < 0.1} { return [err $c 400 "bad command"] } }
             } elseif {[regexp {^tiltmode [01]$} $cmd]} {
+            } elseif {[regexp {^wtest (stop|start 0\.[0-9]{1,3} [1-9][0-9]{0,2})$} $cmd]} {
             } elseif {[regexp {^xmove ([0-9]{1,3})(\.[0-9])?$} $cmd -> xi xd]} {
                 if {$xi > 140 || ($xi == 140 && $xd ne "" && $xd ne ".0")} { return [err $c 400 "bad command"] }
             } elseif {[regexp {^dynlift ([01]) ([0-9]{3,5}) ([0-9]{2,5}) ([0-9]{1,2}) ([0-9]{1,3})( ([0-9]{1,6}))?$} $cmd -> dlo dll dlw dls dlf dlx dlst]} {
@@ -618,6 +620,29 @@ proc handle {c method path query host body origin} {
             file delete $mbakdir/$name
             log "machine settings: deleted backup $name"
             reply $c 200 "{\"ok\":true}"
+        }
+        "POST /api/wtdel" {
+            set running ""
+            catch {
+                set f [open $livedir/live.json]
+                set txt [$f read]
+                $f close
+                regexp {"wt":\{"st":1,.*?"file":"([^"]*)"} $txt -> running
+            }
+            set n 0
+            set skipped {}
+            foreach l [split $body \n] {
+                set name [string trim $l]
+                if {$name eq ""} continue
+                if {![regexp {^waittest_[0-9]\.[0-9]{3}mm_(boot[0-9]+|[0-9]{8}_[0-9]{6})\.csv$} $name] || $name eq $running} {
+                    lappend skipped $name
+                    continue
+                }
+                file delete $csvdir/waittest/$name
+                incr n
+            }
+            log "wait test logs deleted: $n, skipped: [llength $skipped]"
+            reply $c 200 "{\"ok\":true,\"deleted\":$n,\"skipped\":[llength $skipped]}"
         }
         "POST /api/logdel" {
             set running ""

@@ -1,0 +1,40 @@
+WAIT TIMES TESTING - FIRST RESULTS (2026-11-06)
+Logs (also in backups/waittest/, git-ignored): waittest_0.100mm_20261106_161224.csv (run 1, 7 layers, stopped by the user),
+waittest_0.100mm_20261106_165019.csv (run 2, 50 layers, finished). Layer height 0.100 mm, plate rises one layer per layer (no cure: the gap under the
+plate = (n+1) * H, column above_mm), tilt 36 deg/s (first 50 layers), no UV. Function: mods/src/sgtap/sgwtest.c, docs/changes_since_build42.txt.
+
+RUN 1 - rule 0.2 g/s over 3 s, Wait & heat on, vat 38.5 -> 41.2 C (heater without a thermostat)
+  layer  settle_s  gap_mm  tank_C  plateau_g  gradient at the end
+    1     213.9    0.200   38.5     357.7      0.186 g/s
+    2     103.6    0.299   39.8     345.6      0.095
+    3      60.3    0.399   40.5     338.0      0.192
+    4      40.6    0.500   40.9     335.1      0.184
+    5      26.9    0.599   41.0     332.1      0.195
+    6      20.6    0.700   41.1     328.0      0.197
+    7      16.3    0.799   41.2     325.2      0.172
+  CHECK: the real drift over the last 8 s at the end of each wait was 0.38-0.71 g/s (2-4 x the rule) and the force still changed 4-19 g over the last
+  10 s: a 3 s window (random error of the slope ~ +-0.1 g/s, checked 20 x per second) ends the wait by luck -> the waits were 15-55 % TOO SHORT.
+
+RUN 2 - rule 0.1 g over 10 s (= 0.01 g/s nominal, ends at a real drift of ~0.05 g/s), min wait not used
+  layer  settle_s  gap_mm  tank_C
+    0     698.4    0.099   42.2   (right after the levelling; heater on 35.4 -> 42.2 C, no thermostat in that library)
+    1     251.2    0.200   41.3   (Wait & heat switched off by the user after layer 0: the vat cooled 43.3 -> 36.5 C over the run)
+    2     131.2    0.299   40.8
+    3      88.7    0.399   40.3
+    4      63.1    0.500   40.0
+    5      40.3    0.599   39.9
+    6      37.7    0.700   39.7
+    7      38.4    0.799   39.5
+    8      26.2    0.899   39.4
+    9      19.4    0.999   39.3
+   10      17.4    1.100   39.2
+  14-49: median 12.9 s (10.1 - 30.8): the 10 s WINDOW is the measurement floor there (the resin settles faster than that); the 20-30 s values are noise events.
+  Plateau force 264-266 g from layer 3 on (275 g in layer 1); gradient at the end 0.003-0.010 g/s.
+
+FINDINGS
+  - The first wait after the levelling took 11.6 min (the print waited 231 s there, under a weaker rule: probably far too short).
+  - Settling time falls with the gap roughly as gap^-1.5 .. -1.7 in layers 1-5 (0.2 -> 0.4 mm: 251 -> 89 s); temperature (cooling) and gap are mixed in run 2.
+  - NOISE: gauge noise ~ +-0.36 g (1 sigma) per reading at 5 Hz; the random error of the "change over the window" ~ 0.36 * sqrt(12 / (5 * window s)) g:
+    3 s 0.32 g, 5 s 0.25, 10 s 0.18, 20 s 0.12, 30 s 0.10, 60 s 0.07; a sensible limit is >= ~2 x that error.
+  - TO DO: runs at FIXED vat temperatures (the thermostat of heated waits, lib 66b4f10e, loads at the next power cycle) and other layer heights (0.05, 0.025);
+    restore the Dynamic wait values before a real print (the card still holds 0.1 g over 10 s).
