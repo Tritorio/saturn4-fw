@@ -8,7 +8,7 @@ Source-only revision: no new firmware image yet (the library change loads at the
 - **Resin mixing, cold resin:** the first descent to Z low now runs slowly (2.5 mm/s, like the resin probe) with the foreign matter guard active, so a real obstacle is still detected. After a clean arrival the guard limit is raised for the rest of the mixing (restored on stop, end, pre-heat off or a print start) and the strokes run at 5 mm/s. Before, viscous cold resin pushed the gauge over the limit on the downstroke and the guard stopped the mixing after a few strokes.
 - **Resin mixing lift height** reduced by 5 mm (Z low + 30 mm).
 - **Fix:** the + / - buttons of the mixing minutes in the Pre-heat card set the value to 0.
-- **Job history:** "Delete timelapse" button deletes only the film of a job; the delete pop-up shows the film sizes.
+- **Job history:** "Delete timelapse" button deletes only the time-lapse of a job; the delete pop-up shows the time-lapse sizes.
 
 ## V1.1 (mod 8.45, build 51) - 2026-11-05
 - **Resin profiles:** named resin profiles for the print settings, tested on a variable-layer print.

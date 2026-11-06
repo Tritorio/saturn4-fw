@@ -29,7 +29,7 @@
 #                          values patched into it, its CRC recomputed, written + read back -> {"ok":true,"n":..,"backup":".."}
 #   POST /api/machine/restore  body "<backup file name>": the backup (CRC checked) becomes the saved file
 #   POST /api/machine/delete body "<backup file name>": deletes that backup from sglog/machine_backups
-#   POST /api/tldel        body "<job log name>\n...": deletes only the timelapse film of those jobs (the logs stay)
+#   POST /api/tldel        body "<job log name>\n...": deletes only the time-lapse of those jobs (the logs stay)
 #   POST /api/logdel       body "<job log name>\n...": deletes job logs (<date>_<name>.csv / boot<n>_<name>.csv)
 #                          and their .txt, never the running job's; tilt_*.csv are not touched
 #   (cmd "mset NAME OLD NEW" = one live machine setting, libsgtap sgmach.c)
