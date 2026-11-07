@@ -96,7 +96,7 @@
   </div>
   <p><b>Show list</b> opens it (the choice is remembered). The switch on the right turns the feature on or off with the same checks as its card; the name opens the card. The header shows the count: “5 on · 3 off”.</p>
   <dl class="kv">
-    <dt>Heating</dt><dd>Pre-heat (with the checkbox <i>Plate into the resin</i>) and Heating during print (with <i>Wait &amp; heat</i>).</dd>
+    <dt>Heating</dt><dd>Pre-heat (with <i>Resin mixing</i>, section 29) and Heating during print (with <i>Wait &amp; heat</i>).</dd>
     <dt>Exposure</dt><dd><b>Manual Exposure</b>: on while a bottom or normal exposure time set from the dashboard is armed or in force (section 22). Switching it off puts the file's times back; it works with or without a print job. <b>Multi Exposure</b>: own UV time per screen quadrant (section 23); the two exclude each other.</dd>
     <dt>Tilt</dt><dd>Tilt Custom Speed, Dynamic wait, Dynamic lift, Slow layers (with <i>Beep before slow layers</i>).</dd>
   </dl>
@@ -114,7 +114,7 @@
   <dl class="kv">
     <dt>Pre-heat</dt><dd>Heats the vat now, while idle, to 20–40 °C. Above 30 °C the card warns: the resin is not stirred and the vat can get very hot.</dd>
     <dt>Heating during print</dt><dd>Keeps the vat at the print temperature, 20–50 °C, during a job. The print starts when the vat reaches the target.</dd>
-    <dt>Plate into the resin</dt><dd>When pre-heat is switched on from the dashboard, the plate goes down at 5 mm/s to 40 mm, then at 2 mm/s to the pre-heat position (6 mm with a flex plate, 3 mm with the factory Z values, section 25), so the plate sits in the warm resin. When pre-heat is switched off it goes up to 50 mm. Never from the printer's screen. It needs an idle printer, Z homed and the foreign matter guard armed.</dd>
+    <dt>Resin mixing</dt><dd>The old &ldquo;Plate into the resin&rdquo; option is gone; resin mixing (section 29) does the same job better: it moves the plate in the resin for a set number of minutes. Use it whenever the pre-heat temperature is above 30 °C.</dd>
     <dt>Plate rises before a print</dt><dd>With pre-heat and this option on, <b>Start print</b> in the Files card first raises the plate to 50 mm, waits until it has arrived and only then starts the print. If it cannot be raised the print does not start and a message says why. A print started on the printer's own screen is not covered.</dd>
     <dt>Wait &amp; heat</dt><dd>Also heats in the wait after retract (section 11).</dd>
   </dl>
@@ -193,6 +193,7 @@
     <dt>Also on bottom layers</dt><dd>On by default. Off: bottom layers keep the slicer wait. The number of bottom layers is read from the print file.</dd>
     <dt>Ignore the slicer wait after retract</dt><dd>While the dynamic wait is on, the slicer's wait is not used on any layer where the dynamic wait is active: the wait lasts until the resin has settled, even when the slicer's value is shorter. It ends after 15 min at the latest if the force never settles. Switching it off during a wait puts the slicer value back at once.</dd>
   </dl>
+  <p><b>Apply</b> is faded while nothing differs from what the printer runs, and stays faded for a moment after you press it until the printer reports the new values. On the wait chart, hover (or drag a finger) over a bar to see its layer, the wait, how it ended (settled, maximum or slicer wait) and whether it was heated. The Manual Exposure chart works the same way: layer, file time and used time.</p>
   <p>Without “ignore”, the slicer's wait is the <b>maximum</b>: the wait is only ever shortened. Set a long wait in the slicer and let the dynamic wait end it. The chart shows the wait used on the last 30 layers (settled, maximum, slicer wait, heated), with the last wait tagged, and four tiles: average of the last 30, shortest and longest settled wait with their layers, and how many reached the maximum. <b>Apply</b> does not close the card; only the × does.</p>
 </section>
 
@@ -334,7 +335,7 @@
     <tbody>
       <tr><td>Dynamic wait, bottom layers, gradient, window, minimum · ignore the slicer wait</td><td>off · bottom on · 1.0 g/s · 1.0 s · 1.0 s · off</td></tr>
       <tr><td>Wait &amp; heat · Tare in the wait · Auto-tare when idle</td><td>off · off · on</td></tr>
-      <tr><td>Heating: pre-heat temperature · heating during print · print temperature · Plate into the resin</td><td>30 °C · on · 40 °C · off</td></tr>
+      <tr><td>Heating: pre-heat temperature · heating during print · print temperature</td><td>30 °C · on · 40 °C</td></tr>
       <tr><td>Tilt profile (N and all four dials) · Custom speeds</td><td>stock: N 50, 36 / 72 °/s, one stage · off</td></tr>
       <tr><td>Slow set · Slow layers · beep before slow layers</td><td>18 °/s both ways · on · off</td></tr>
       <tr><td>Gauge sync (on, automatic search, offset)</td><td>on · on · 0 ms</td></tr>
@@ -485,8 +486,64 @@
   </dl>
 </section>
 
+<section class="s" id="camera">
+  <div class="eyebrow">28 · Camera · Camera card</div>
+  <h2>Camera and timelapse</h2>
+  <div class="why"><div class="eyebrow">Why it exists</div>
+    <p>The printer has a camera, but its stream is awkward to open (it speaks RTSP over UDP, which browsers cannot play). A small relay program on the printer turns it into a normal video that the dashboard plays, and the same relay takes one picture per layer for a timelapse without touching the print timing.</p>
+  </div>
+  <dl class="kv">
+    <dt>Live view</dt><dd>The Camera card (the Camera switch in the Status card opens it) plays the camera. It stops when you close the card and when a print starts. One viewer at a time. The stream has no login: anyone on your network can open port 8091.</dd>
+    <dt>Timelapse</dt><dd>The switch in the Camera card, read at the start of a job. The printer saves one picture per layer, taken just after the retract while the plate is at rest, and only while the plate is above <b>Z = 40 mm</b> (before that the plate is inside the vat and nothing is visible). A separate low-priority program takes the pictures: the print timing never changes, and a layer whose picture is not ready in time is skipped.</dd>
+    <dt>Where the pictures go</dt><dd>One H.264 file per job in the hidden folder <code>.timelapse</code> on the files partition (about 200 KB per picture). All timelapses together are capped at 2 GiB: the oldest are deleted first, and the Camera card shows an amber warning when the cap is near.</dd>
+    <dt>Get the video</dt><dd>The time-lapse button in the Print job history card downloads the file. Make the video on your PC: <code>ffmpeg -framerate 30 -i JOB.h264 -c copy JOB.mp4</code>. <b>Delete timelapse</b> in the delete pop-up removes only the film and keeps the job log.</dd>
+    <dt>Start height</dt><dd>The file <code>sglog/TLMINZ</code> (whole mm, read at the start of each job) overrides the 40 mm; <code>-1000</code> means from the first layer.</dd>
+  </dl>
+</section>
+
+<section class="s" id="mixing">
+  <div class="eyebrow">29 · Print · Resin heating</div>
+  <h2>Resin mixing</h2>
+  <div class="why"><div class="eyebrow">Why it exists</div>
+    <p>Resin that is heated without stirring gets hot near the heater and stays cool elsewhere, and cold resin is thick. Mixing moves the plate up and down in the resin for a few minutes, so the vat warms evenly. It replaces the old &ldquo;Plate into the resin&rdquo; option.</p>
+  </div>
+  <p>Mixing is in the Pre-heat part of the Resin heating card (minutes, Start / Stop) and has a switch in the Features list. For the set minutes the plate moves between a low position and 30 mm above it at 5 mm/s, then rises to Z = 50 mm at the end or on stop. The first descent into the resin is slow (2.5 mm/s) with the foreign matter guard active, so a real obstacle is still detected; after a clean arrival the guard limit is raised for the strokes and restored afterwards. Mixing cannot start while a print runs. The card warns when the pre-heat temperature is above 30 °C: use mixing then.</p>
+</section>
+
+<section class="s" id="resinprof">
+  <div class="eyebrow">30 · Print · Exposure</div>
+  <h2>Resin profiles</h2>
+  <div class="why"><div class="eyebrow">Why it exists</div>
+    <p>A resin needs different exposure times for different layer heights. With variable layer height one file has several heights, and the slicer can only put one time per file. A profile holds the right times per height.</p>
+  </div>
+  <p>A profile has rows of <b>thickness (µm), bottom time, normal time</b>. Before each layer the printer measures the thickness from the Z move and takes the row within 1 µm (transition layers are graded between the row's two times). A layer without a row keeps the file's time and is counted as missing in the card. Pick the profile in the Resin profiles card, in the Features list (Resin profile) or in the Start print dialog. Manual Exposure wins over a profile, and a profile and Multi Exposure refuse each other.</p>
+</section>
+
+<section class="s" id="waittest">
+  <div class="eyebrow">31 · Test tool · Developer card</div>
+  <h2>Wait Times Testing</h2>
+  <div class="why"><div class="eyebrow">Why it exists</div>
+    <p>To choose the Dynamic wait values you need to know how long the resin takes to settle after a retract. This test measures it on a dry run with no UV, at the layer height you choose, with the vat at the temperature you choose.</p>
+  </div>
+  <p>Open it from the Developer card. Input: layer height and number of layers. It runs its own sequence from the levelling (calibrate in air, resin probe, auto-levelling with the machine's own settings), the first wait right after levelling, then per layer: tilt release at 36 °/s, plate rise by one layer height while the tilt returns, and a wait until settled. There is no maximum wait. The settle rule is two consecutive window averages that differ by less than the set force change. Wait &amp; heat follows its dashboard setting. Every run writes its own log (<code>sglog/waittest/waittest_&lt;height&gt;mm_&lt;date&gt;_&lt;time&gt;.csv</code>: force, vat temperature, settle time per layer) that you can download and delete from the card. Short windows are noisy: about ±0.3 g at 3 s, so use 10 s or more and a force change of about twice the noise.</p>
+</section>
+
+<section class="s" id="mach">
+  <div class="eyebrow">32 · Safety · Machine settings</div>
+  <h2>Machine settings safety</h2>
+  <div class="why"><div class="eyebrow">Why it exists</div>
+    <p>On 2026-11-06 the printer reset unexpectedly and the app rewrote its machine settings file with factory defaults (level threshold, tank target, hold currents, Z zero). Only an old backup existed. Now the file is backed up whenever it changes, and put back when the app loses it.</p>
+  </div>
+  <dl class="kv">
+    <dt>At boot</dt><dd>Before the app starts, the guard restores a missing, empty or invalid settings file (and <code>machine_info.bin</code>) from the newest backup. A valid file is saved when it differs from the last backup. The files partition is not mounted yet at that moment, so the guard keeps a mirror on the boot partition (<code>/media/mmcblk0p1/mg/</code>: the last 3 settings files and the last <code>machine_info.bin</code>) and logs to <code>mg/boot.log</code> there.</dd>
+    <dt>After start</dt><dd>A watcher reads the app log for 150 s. If the app reports &ldquo;can't find machine parameters&rdquo; (it just wrote defaults), the newest backup is put back, the bad file is kept as <code>suspect_N.bin</code> (last 3) and <code>sglog/MACHRESET</code> gets a time stamp. The running app still holds the defaults in memory: <b>power cycle the printer</b> to load the restored file, and do not press Flex Plate or Tilt Apply before.</dd>
+    <dt>Every minute</dt><dd>The watcher saves a changed valid settings file as a rolling backup (the last 12 in <code>sglog/machine_backups/boot/</code>) and refreshes <code>machine_info.bin</code> at most every 30 minutes. Log: <code>sglog/machguard.log</code>.</dd>
+    <dt>Switch off</dt><dd>Create <code>/customer/mod/machguard_disable</code> over telnet and reboot.</dd>
+  </dl>
+</section>
+
 <section class="s" id="safety">
-  <div class="eyebrow">28 · Safety</div>
+  <div class="eyebrow">33 · Safety</div>
   <h2>Switches and recovery</h2>
   [[shot machine|Machine settings card with the list of backups of the saved machine settings file|The Machine settings backups: the saved file is backed up before every change, including Flex Plate.]]
   <div class="why"><div class="eyebrow">Why it is built this way</div>
@@ -514,7 +571,7 @@
 </section>
 
 <section class="s" id="reference">
-  <div class="eyebrow">29 · Reference</div>
+  <div class="eyebrow">34 · Reference</div>
   <h2>Settings files on the printer</h2>
   [[shot storage|Storage list with the partitions used by print files, logs, machine data and the app|The partition that holds the files below (logs and job CSVs) is the second line of the storage list.]]
   <div class="why"><div class="eyebrow">Why it exists</div>
@@ -534,11 +591,15 @@
       <tr><td><code>DYNLIFT</code> · <code>GSYNC</code></td><td>Dynamic lift settings (limit, lower level, steps, start layer) · gauge sync (on, automatic search, offset)</td></tr>
       <tr><td><code>MULTIEXPO</code></td><td>The four quadrant times and the two mirror flags of Multi Exposure (the ON switch is never saved: it ends with the job)</td></tr>
       <tr><td><code>LEVELS.csv</code></td><td>One line per print job with the Z zero found by its auto-leveling</td></tr>
-      <tr><td><code>WAIT2</code></td><td>Second minimum wait of the dynamic wait: "MIN2 N"</td></tr>
+      <tr><td><code>WAIT2</code></td><td>Second set and minimum of the dynamic wait: "MIN2 N GRAD2 WIN2 NG"</td></tr>
       <tr><td><code>MXFROM</code></td><td>Multi Exposure start layer</td></tr>
       <tr><td><code>SLOWTILT</code> · <code>SLOWBEEP</code> · <code>SLOWOFF</code></td><td>The slow set · beep before slow layers · slow layers off</td></tr>
       <tr><td><code>layertilt/</code></td><td>One slow-layer list per print file</td></tr>
-      <tr><td><code>PREZ_ON</code></td><td>Present = Plate into the resin</td></tr>
+      <tr><td><code>TIMELAPSE</code> · <code>TLMINZ</code></td><td>Present = timelapse on · start height in whole mm (default 40)</td></tr>
+      <tr><td><code>RESIN</code> · <code>resins/</code></td><td>The selected resin profile · one file per profile (thickness, bottom ms, normal ms)</td></tr>
+      <tr><td><code>MACHRESET</code> · <code>machguard.log</code></td><td>Time stamp when the app was found to have reset its machine settings · log of the machine settings guard</td></tr>
+      <tr><td><code>machine_backups/boot/</code></td><td>Rolling backups of the machine settings file (last 12) and the suspect files; a mirror is on the boot partition in <code>mg/</code></td></tr>
+      <tr><td><code>waittest/</code></td><td>One log per Wait Times Testing run</td></tr>
       <tr><td><code>UISLEEP</code></td><td>UI loop sleep, idle and printing, in ms</td></tr>
       <tr><td><code>machine_backups/</code></td><td>Backups of the machine settings file: before a Machine settings change, a restore, or a Flex Plate switch (the last 10)</td></tr>
       <tr><td><code>TILTTRACE</code></td><td>Present = detailed tilt trace (about 100 KB per layer; for tests only)</td></tr>

@@ -101,11 +101,16 @@ proc snap {} {
     return same
 }
 
-proc snap_info {} {
+# machine_info.bin is rewritten by the app every minute or so during a print (344 KB): the copy is refreshed at boot (force) and then at most every 30 minutes
+proc snap_info {{force 0}} {
     global ifile p1dir
     if {[fsize $ifile] == 0} { return }
     file mkdir $p1dir
     set b $p1dir/info_last.bin
+    if {!$force && [file exists $b]} {
+        set age [expr {[clock seconds] - [file mtime $b]}]
+        if {$age >= 0 && $age < 1800} { return }
+    }
     if {[file exists $b] && [md5 $b] eq [md5 $ifile]} { return }
     safe_copy $ifile $b
     glog "backup info_last.bin ([file size $b] bytes)"
@@ -178,6 +183,6 @@ if {[fsize $mfile] == 0} {
     } else {
         set r [catch {snap} e]
         if {$r} { glog "backup step failed: $e" } else { glog "boot: settings file ok ($e)" }
-        catch {snap_info}
+        catch {snap_info 1}
     }
 }

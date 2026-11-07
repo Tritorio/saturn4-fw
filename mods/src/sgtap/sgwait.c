@@ -921,9 +921,9 @@ static void finish_wait(uintptr_t P, uint64_t now_ms)
 /* ---- TIMELAPSE trigger: in each wait the app starts (plate at rest after the retract) one datagram "T <layer> <job base>" goes to
  * sgcam (127.0.0.1:8092), which takes one camera picture in a low-priority child process. Nothing here waits for it: a non-blocking sendto.
  * The switch (file <csvdir>/TIMELAPSE, command "tl on|off") is read once at the start of a job (the first wait with a new job log). Pictures only while
- * the plate is above TL_MIN_Z (machine coordinate: the user wants the timelapse to start from Z > 45 mm). */
+ * the plate is above TL_MIN_Z (machine coordinate: the user wants the timelapse to start from Z > 40 mm). */
 #define TL_FLAG  "TIMELAPSE"
-#define TL_MIN_Z 45.0
+#define TL_MIN_Z 40.0
 #define TL_PORT  8092
 static double zm_now_mm(int *ok);
 static char tl_job[256];

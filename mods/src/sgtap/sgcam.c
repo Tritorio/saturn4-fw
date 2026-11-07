@@ -832,7 +832,7 @@ out:
 
 
 /* ---- TIMELAPSE: libsgtap sends "T <layer> <job base>" to 127.0.0.1:8092 in the wait after each retract (only when the switch was on at the
- * job start and the plate is above 45 mm). A child process (nice 19, hard 6 s alarm) takes the next key frame of the camera stream and appends it to
+ * job start and the plate is above 40 mm). A child process (nice 19, hard 6 s alarm) takes the next key frame of the camera stream and appends it to
  * <csvdir>/<job base>.h264 (an all-intra Annex-B file: SPS + PPS + IDR per picture; ffmpeg -framerate 30 -i X.h264 -c copy X.mp4). Nothing waits for it:
  * a trigger that comes while the previous picture is still being taken is counted as skipped. The camera session is always closed with TEARDOWN. */
 
