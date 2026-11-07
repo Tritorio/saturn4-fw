@@ -18,7 +18,7 @@
  *             second Z move after the return has no distance and is left out) (Z0 + (n+1) * H, at the Z initial speed: about 1 s for
  *             0.05 mm) and the tilt return (140 -> 0) starts at the same moment; both with the stages of the live tilt profile (T_PROF: layers <= N use
  *             A..F, later ones S..Y, the Tilt card values). No exposure: nothing is cured, so the gap under the plate grows by one layer height per
- *             layer. Then the WAIT: no maximum time; it ends when the gradient of the last WIN s (the Dynamic wait settings, LSQ slope of the readings) is below GRAD and at least WIN s have passed (the
+ *             layer. Then the WAIT: no maximum time; it ends when the average of the last WIN s differs from the average of the WIN s before by less than N g (WIN / N = the Dynamic wait settings; so at least 2 x WIN s pass) (the
  *             minimum wait of the Dynamic wait is NOT used: the test measures the settling time). Wait & heat follows the dashboard settings.
  *   end       the plate rises to 50 mm, the heater is off. Stop / print start / guard trip / any failure: axis_stop, tilt back to 0, plate up to 50 mm.
  * Own datalog <csvdir>/waittest/waittest_<H 3 decimals>mm_<YYYYmmdd_HHMMSS>.csv (row every 0.5 s + one "layer" row per wait, line 2 = column
@@ -34,6 +34,8 @@
 #define WT_LSTILL_S   5.0
 #define WT_TILT_MAX   140.0f
 #define WT_TILT_HOME  36.0f
+#define WT_WIN_MAX    380.0              /* s: longest averaging window (two windows must fit in the reading history)  */
+#define WT_TILT_SPD   36.0f              /* deg/s of every tilt move of the test */
 #define WT_NRES       200              /* settle times kept for the page */
 #define WT_ROW_US     500000ull
 #define H_Z_INITSPD   (H_MACH + 0x4cu)     /* float, I5 E  Z initial speed, mm/s */
@@ -64,7 +66,7 @@ static int wt_nres;
 static double wt_el, wt_gnow = -1, wt_zmm, wt_xdeg;                         /* shown values */
 
 /* sequencer state (poll thread only) */
-static struct { int on; unsigned i0; uint64_t dead; } wt_mx[2];       /* per axis (0 = Z, 1 = tilt): a move in progress, idle counter at its start, deadline */
+static struct { int on; unsigned i0; uint64_t dead, due, recheck; } wt_mx[2];       /* per axis (0 = Z, 1 = tilt): a move in progress, idle counter at its start, deadline */
 static unsigned wt_mv_t0;                                              /* guard trip counter at the latest move start */
 static uint64_t wt_t0, wt_t_ph, wt_t_row, wt_t_start;
 static double wt_zero_raw, wt_z0, wt_prev_settle = -1;
@@ -99,6 +101,7 @@ static unsigned wt_hp0;                                                     /* h
 static double wt_rmin, wt_rmax, wt_rlast;
 static int wt_rn;
 static char wt_fail[96];
+static unsigned wt_nrecheck;                                         /* moves whose idle line was only found by the forced log re-read */
 
 static double wt_k(void) { return w_k < 0 ? -w_k : w_k; }
 
@@ -137,31 +140,31 @@ static int wt_force_u(double *u)
     return 1;
 }
 
-/* |LSQ slope| in g/s of the readings of the last win s that all lie after from_us; -1 = too few */
-static double wt_grad(uint64_t from_us, double win, double *mean_raw)
+/* settle rule: |mean of the last win s - mean of the win s before| in g (two consecutive averages); -1 = not available yet
+ * (fewer than 2 * win s of readings since from_us, or too few readings in a block). *mean_raw = mean raw of the last block. win is capped to what the history holds. */
+static double wt_block_diff(uint64_t from_us, double win, double *mean_raw)
 {
-    uint64_t now = now_us(), from = now - (uint64_t)(win * 1e6);
-    double st = 0, sv = 0, stt = 0, stv = 0, sr = 0, k = wt_k(), g;
-    int n = 0;
-    if (from < from_us)
+    uint64_t now = now_us(), b1 = now - (uint64_t)(win * 1e6), b0 = now - (uint64_t)(2 * win * 1e6);
+    double s1 = 0, s0 = 0, k = wt_k();
+    int n1 = 0, n0 = 0;
+    if (b0 < from_us)
         return -1;
     pthread_mutex_lock(&glock);
     for (unsigned i = 0; i < HIST && i < hpos; i++) {
         unsigned j = (hpos - 1 - i) % HIST;
-        double t, v;
-        if (hist[j].ts < from)
+        if (hist[j].ts < b0)
             break;
-        t = (hist[j].ts - from) / 1e6;
-        v = hist[j].raw / k;
-        st += t; sv += v; stt += t * t; stv += t * v; sr += hist[j].raw;
-        n++;
+        if (hist[j].ts >= b1) { s1 += hist[j].raw; n1++; }
+        else { s0 += hist[j].raw; n0++; }
     }
     pthread_mutex_unlock(&glock);
-    if (n < 3 || n * stt - st * st <= 0)
+    if (n1 < 10 || n0 < 10)
         return -1;
-    *mean_raw = sr / n;
-    g = (n * stv - st * sv) / (n * stt - st * st);
-    return g < 0 ? -g : g;
+    *mean_raw = s1 / n1;
+    {
+        double d = (s1 / n1 - s0 / n0) / k;
+        return d < 0 ? -d : d;
+    }
 }
 
 static double wt_zpos(int *ok)
@@ -248,10 +251,10 @@ static void wt_header(void)
            "\"Layer number, 0 = the first layer (the wait right after the levelling)\",\"prep, calibrate, probe, level, release, return, wait, end, abort\","
            "\"Last gauge reading in the row, raw counts\",\"Force in grams: (raw - zero in air) / k. Pressing down = positive\","
            "\"Lowest g of the readings in the row\",\"Highest g of the readings in the row\",\"Gauge readings in the row\","
-           "\"Vat temperature, C (empty if no sensor)\",\"Absolute LSQ slope of the last window in the wait, g/s\","
+           "\"Vat temperature, C (empty if no sensor)\",\"In the wait: absolute difference of the last window average and the average of the window before, g\","
            "\"Plate position, mm (machine Z)\",\"Tilt position, deg (0 = flat, 140 = fully tilted)\",\"1 = resin heated in the wait\","
            "\"layer rows: time from the end of the retract until settled, s\",\"layer rows: mean force of the settling window, g\","
-           "\"layer rows: gradient at the settled moment, g/s\",\"Layer height of this run, mm\","
+           "\"layer rows: difference of the last two window averages at the settled moment, g\",\"Layer height of this run, mm\","
            "\"Plate height above the levelled contact, mm (empty before the levelling is done): the resin gap under the plate, since nothing is cured\"\n");
 }
 
@@ -264,6 +267,8 @@ static void wt_move(int axis, float tgt, float spd)
     wt_mx[axis].i0 = axis ? lg_x_idle : lg_z_idle;
     wt_mv_t0 = lg_z_trig;
     wt_mx[axis].dead = now_us() + (uint64_t)((dist / spd + 20.0) * 1e6);
+    wt_mx[axis].due = now_us() + (uint64_t)((dist / spd + 1.5) * 1e6);      /* the move should be over by now: read the app log directly (a missed idle line aborted a test) */
+    wt_mx[axis].recheck = 0;
     wt_mx[axis].on = 1;
     mv(axis, 0, tgt, spd);
 }
@@ -280,6 +285,20 @@ static int wt_chk(int axis)
     if ((axis ? lg_x_idle : lg_z_idle) != wt_mx[axis].i0) {
         wt_mx[axis].on = 0;
         return 1;
+    }
+    if (now_us() > wt_mx[axis].due && now_us() >= wt_mx[axis].recheck) {   /* every 0.25 s: the log follower thread may be late or have missed the line */
+        wt_mx[axis].recheck = now_us() + 250000u;
+        sglog_force_follow();
+        if ((axis ? lg_x_idle : lg_z_idle) != wt_mx[axis].i0) {
+            wt_mx[axis].on = 0;
+            wt_nrecheck++;
+            wt_row("note-idle-line-found-by-recheck", -1, 0, 0);
+            return 1;
+        }
+        if (lg_z_trig != wt_mv_t0) {
+            snprintf(wt_fail, sizeof wt_fail, "the foreign matter guard tripped");
+            return -1;
+        }
     }
     if (now_us() > wt_mx[axis].dead) {
         snprintf(wt_fail, sizeof wt_fail, "a move did not finish in time");
@@ -304,7 +323,7 @@ static void wt_stop_axes(void)
     wt_mx[0].on = wt_mx[1].on = 0;
 }
 
-static int wt_gov_off;                                              /* the wait test's heater is off because of the thermostat (heat_govern, sgwait.c) */
+static uint64_t wt_gov_off;                                         /* us: the wait test's heater was switched off by the thermostat (heat_govern, sgwait.c; 0 = not) */
 
 static void wt_heater_off(void)
 {
@@ -499,8 +518,8 @@ static void wt_tilt_stage(int release, int stage)
             spd = (float)ret2;
         }
     }
-    if (spd < 10.0f || spd > 144.0f)
-        spd = 36.0f;
+    (void)rel1; (void)rel2; (void)ret1; (void)ret2;
+    spd = WT_TILT_SPD;                                /* user: the test always tilts at the printer's default 36 deg/s (not the profile speeds) */
     wt_move(1, tgt, spd);
 }
 
@@ -536,7 +555,7 @@ static void wt_wait_begin(void)
     wt_gnow = -1;
     wt_heated = 0;
     if (wset.wh && h_ok && HB(H_UI + 0x14) && HW(H_DEV) && HB(H_DEV + 0x118) && (wt_prev_settle < 0 || wt_prev_settle >= W_HEATMIN))
-        wt_heated = heater_on();
+        wt_heated = heat_start(&wt_gov_off);
 }
 
 static void wt_wait_step(void)
@@ -552,9 +571,9 @@ static void wt_wait_step(void)
     wt_el = el;
     if (wt_heated)
         heat_govern(&wt_gov_off);
-    g = wt_grad(wt_t0, wset.win, &mean);
+    g = wt_block_diff(wt_t0, wset.win > WT_WIN_MAX ? WT_WIN_MAX : wset.win, &mean);   /* g = |last average - previous average| */
     wt_gnow = g;
-    if (el >= wset.win && g >= 0 && g * wset.win < wset.grad) {      /* change over the window (g) = slope * window, as the Dynamic wait */
+    if (g >= 0 && g < wset.grad) {                                   /* two consecutive averages of win s differ by less than N g */
         double plateau = (mean - wt_zero_raw) / wt_k();
         wt_row("layer", el, plateau, g);
         pthread_mutex_lock(&wt_lock);

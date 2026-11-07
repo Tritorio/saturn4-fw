@@ -170,7 +170,7 @@ static void sgzmon_step(uintptr_t P, uint64_t now_ms)
     zm_csvs.pending = 1;
     zm_csvs.z = zok ? z - zero : z;
     zm_csvs.step = step;
-    zm_csvs.has = has;                                       /* the CSV step is only ever a step from the layer before */
+    zm_csvs.has = has || fl;                                 /* user: the first layer shows its height above the Z zero as the step (200 um for a 0.2 mm first layer) */
     pthread_mutex_unlock(&zm_lock);
     if (first)                                               /* the first layer of a job: its levelling result */
         zm_levellog(zero, zok, z, zt, ztok);

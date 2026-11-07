@@ -254,7 +254,7 @@
   .wlegend i.o { background: var(--swoff); }
   .wlegend i.h { width: 7px; height: 7px; border-radius: 50%; background: var(--warnfill); }
   #wbars { display: block; width: 100%; height: 84px; margin-top: 6px; }
-  .wchart { position: relative; }
+  .wchart { position: relative; touch-action: pan-y; }
   .wlast { position: absolute; right: 0; top: 24px; background: var(--card2); border-radius: 6px; padding: 3px 8px; font-size: 12px; color: var(--ink2); white-space: nowrap; }
   .wlast b { color: var(--ink); font-weight: 500; font-variant-numeric: tabular-nums; }
   .wtiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 14px; }
@@ -429,6 +429,11 @@
   #tiltcard { order: 10000000; }
   #slsetcard { order: 10000001; }
   .dl2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .wgrid.dwbar { display: flex; align-items: center; gap: 10px; background: var(--card2); border: 1px dashed var(--line); border-radius: 12px; padding: 8px 10px; }
+  .dwbar .hbox { flex: 1; background: transparent; padding: 0; min-width: 0; }
+  .dwbar .hbox .label { text-align: center; padding-bottom: 2px; }
+  .dwbar .dwarr { color: var(--muted); font-size: 12px; white-space: nowrap; }
+  @media (max-width: 560px) { .wgrid.dwbar { flex-wrap: wrap; justify-content: center; } }
   .dl2 .sv.g input { width: 58px; }
   @media (max-width: 560px) { .dl2 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   .xmnow { display: flex; align-items: baseline; gap: 10px; margin-top: 8px; }
@@ -450,6 +455,7 @@
   .exleg .ld { width: 14px; height: 0; border-top: 2px dashed var(--ink2); }
   .exleg .ln { width: 2px; height: 11px; background: var(--ink); }
   #exchart svg { display: block; width: 100%; height: auto; margin-top: 6px; }
+  #exwrap { position: relative; touch-action: pan-y; }
   .rpbar { display: flex; gap: 8px; align-items: flex-end; margin: 10px 0 0; }
   .rptab { width: 100%; border-collapse: collapse; margin: 10px 0; }
   .rptab th { font-weight: 400; color: var(--ink2); font-size: 12px; text-align: left; padding: 4px 6px; }
@@ -862,7 +868,7 @@
     <div class="exban" id="exmxban" hidden>Multi Exposure is on. Switch it off first: both change the layer exposure time.</div>
     <div class="exhead"><span class="label">Exposure per layer (s)</span>
       <span class="exleg"><span><i class="ld"></i>file</span><span><i class="lg"></i>used</span><span id="exlegy"><i class="ly"></i>edited</span><span><i class="ln"></i>now</span></span></div>
-    <div id="exchart"></div>
+    <div id="exwrap"><div id="exchart"></div><div class="tip" id="extip"></div></div>
     <div class="stats" id="extiles"></div>
     <label class="cxhide hsw"><span>Use the times below instead of the file <span class="sub" style="font-weight:400">· bottom / normal layers, until the job ends</span></span><input type="checkbox" id="exsw" role="switch"></label>
     <button class="cxbar" type="button" aria-expanded="false"><span>Settings</span><i>▾</i></button>
@@ -978,7 +984,7 @@
     </div>
     <div class="cxa hwarn" id="hwarn" hidden role="note">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 21h20L12 3z"/><path d="M12 10v5"/><path d="M12 18h.01"/></svg>
-      <span>Above 30 °C is not recommended for pre-heat without Resin Mixing active: the resin is not stirred and the VAT can get very hot.</span>
+      <span>With a pre-heat temperature above 30 °C, also use the Resin Mixing function: otherwise the resin is not stirred and the VAT can get very hot.</span>
     </div>
 
     <div id="mixbox" hidden class="cxa">
@@ -1096,7 +1102,7 @@
     <div style="margin: 12px 0 4px">
       <div class="wrow"><span class="label">Wait used, last 30 layers</span>
         <span class="wlegend"><span><i></i>settled</span><span><i class="m"></i>maximum</span><span><i class="o"></i>slicer wait</span><span><i class="h"></i>heated</span></span></div>
-      <div class="wchart"><svg id="wbars" role="img" aria-label="Wait used per layer"></svg><div class="wlast" id="wlast" hidden></div></div>
+      <div class="wchart"><svg id="wbars" role="img" aria-label="Wait used per layer"></svg><div class="tip" id="wbtip"></div><div class="wlast" id="wlast" hidden></div></div>
       <div class="wtiles" id="wtiles" hidden>
         <div class="wtile"><span class="label">Average</span><b id="wtavg">–</b><div class="sub" id="wtavgs"></div></div>
         <div class="wtile"><span class="label">Shortest</span><b id="wtmin">–</b><div class="sub" id="wtmins"></div></div>
@@ -1107,17 +1113,17 @@
     <label class="cxhide hsw"><span>Start the exposure when the resin has settled</span><input type="checkbox" id="dwon" role="switch"></label>
     <button class="cxbar" type="button" aria-expanded="false"><span>Settings</span><i>▾</i></button>
     <label class="cx hsw"><span>Also on bottom layers <span class="sub" style="font-weight:400" id="dwbotn"></span></span><input type="checkbox" id="dwdb" role="switch"></label>
-    <div class="cx wgrid dl2">
-      <div class="hbox">
-        <label class="label" for="dwg">Change below</label>
+    <div class="cx wgrid dl2" id="dwset1">
+      <div class="hbox" id="dwgbox">
+        <label class="label" for="dwg">Force Variation 1</label>
         <div class="step">
           <button class="sb" data-w="dwg" data-d="-1" data-st="0.1" aria-label="Lower">−</button>
           <span class="sv g"><input id="dwg" type="number" min="0.05" max="20" step="0.01" inputmode="decimal"><small>g</small></span>
           <button class="sb" data-w="dwg" data-d="1" data-st="0.1" aria-label="Raise">+</button>
         </div>
       </div>
-      <div class="hbox">
-        <label class="label" for="dww">Over</label>
+      <div class="hbox" id="dwwbox">
+        <label class="label" for="dww">Timespan 1</label>
         <div class="step">
           <button class="sb" data-w="dww" data-d="-1" aria-label="Lower">−</button>
           <span class="sv g"><input id="dww" type="number" min="0.6" max="600" step="0.1" inputmode="decimal"><small>s</small></span>
@@ -1125,9 +1131,39 @@
         </div>
       </div>
     </div>
+    <div class="cx wgrid dwbar" id="dwswbar" hidden>
+      <span class="dwarr">▲ layers 1 to N · set 1</span>
+      <div class="hbox" id="dwngbox">
+        <label class="label" for="dwng">Layer Switch</label>
+        <div class="step">
+          <button class="sb" data-w="dwng" data-d="-1" aria-label="Lower">−</button>
+          <span class="sv g"><input id="dwng" type="number" min="0" max="99999" step="1" inputmode="decimal"><small></small></span>
+          <button class="sb" data-w="dwng" data-d="1" aria-label="Raise">+</button>
+        </div>
+      </div>
+      <span class="dwarr">set 2 · after N ▼</span>
+    </div>
+    <div class="cx wgrid dl2" id="dwg2row" hidden>
+      <div class="hbox" id="dwg2box">
+        <label class="label" for="dwg2">Force Variation 2</label>
+        <div class="step">
+          <button class="sb" data-w="dwg2" data-d="-1" data-st="0.1" aria-label="Lower">−</button>
+          <span class="sv g"><input id="dwg2" type="number" min="0.05" max="20" step="0.01" inputmode="decimal"><small>g</small></span>
+          <button class="sb" data-w="dwg2" data-d="1" data-st="0.1" aria-label="Raise">+</button>
+        </div>
+      </div>
+      <div class="hbox" id="dww2box">
+        <label class="label" for="dww2">Timespan 2</label>
+        <div class="step">
+          <button class="sb" data-w="dww2" data-d="-1" aria-label="Lower">−</button>
+          <span class="sv g"><input id="dww2" type="number" min="0.6" max="600" step="0.1" inputmode="decimal"><small>s</small></span>
+          <button class="sb" data-w="dww2" data-d="1" aria-label="Raise">+</button>
+        </div>
+      </div>
+    </div>
     <div class="cx wgrid" id="dwm2row">
       <div class="hbox">
-        <label class="label" for="dwm">Min wait &lt; layer</label>
+        <label class="label" for="dwm">Min Wait before</label>
         <div class="step">
           <button class="sb" data-w="dwm" data-d="-1" aria-label="Lower">−</button>
           <span class="sv g"><input id="dwm" type="number" min="1" step="0.5" inputmode="decimal"><small>s</small></span>
@@ -1135,7 +1171,7 @@
         </div>
       </div>
       <div class="hbox" id="dwnbox" hidden>
-        <label class="label" for="dwn">Layer</label>
+        <label class="label" for="dwn">Transition Layer</label>
         <div class="step">
           <button class="sb" data-w="dwn" data-d="-1" aria-label="Lower">−</button>
           <span class="sv g"><input id="dwn" type="number" min="0" max="99999" step="1" inputmode="decimal"><small></small></span>
@@ -1143,7 +1179,7 @@
         </div>
       </div>
       <div class="hbox" id="dwm2box" hidden>
-        <label class="label" for="dwm2">Min wait ≥ layer</label>
+        <label class="label" for="dwm2">Min Wait after</label>
         <div class="step">
           <button class="sb" data-w="dwm2" data-d="-1" aria-label="Lower">−</button>
           <span class="sv g"><input id="dwm2" type="number" min="1" step="0.5" inputmode="decimal"><small>s</small></span>
@@ -1151,7 +1187,7 @@
         </div>
       </div>
     </div>
-    <div class="cx tnote qnote" hidden><span id="dwm2note">Min wait &lt; layer is used on the layers before the Layer N, Min wait ≥ layer from layer N to the end of the print (layer numbers as in the slicer). Layer 0: Min wait ≥ layer applies to the whole print and Min wait &lt; layer is greyed out. The two minimum waits are there to avoid waits that are too short because of stray force sensor readings: such a reading can look like a settled resin and trigger an early exposure while the resin is still not fully settled. Especially during the early layers, a wait that is too short can cause a print failure or layer delamination.</span></div>
+    <div class="cx tnote qnote" hidden><span id="dwm2note"><b>Force Variation / Timespan:</b> a wait is settled when the force changes by less than <b>Force Variation</b> over the last <b>Timespan</b>. Set 1 is used on layers 1 to the <b>Layer Switch</b>, set 2 on every layer after it. With Layer Switch = 0 set 2 applies to the whole print and set 1 is greyed out. <b>Min Wait:</b> <b>Min Wait before</b> is the minimum on layers 1 to the <b>Transition Layer</b>, <b>Min Wait after</b> on every layer after it; with Transition Layer = 0 Min Wait after applies to the whole print and Min Wait before is greyed out. The two switches are independent of each other. Layer numbers as in the slicer, the first layer is 1. The two minimum waits are there to avoid waits that are too short because of stray force sensor readings: such a reading can look like a settled resin and trigger an early exposure while the resin is still not fully settled. Especially during the early layers, a wait that is too short can cause a print failure or layer delamination.</span></div>
     <div class="cx tnote qnote" hidden><span id="dwmaxnote"></span></div>
     <div class="cx hfoot">
       <span class="sub">Applies from the next layer · settings saved on the printer · off = printer default</span>
@@ -1322,7 +1358,7 @@
     <svg id="wtchart" viewBox="0 0 520 120" role="img" aria-label="Settling time per layer" style="display: none"></svg>
     <div class="tnote" id="wtset"></div>
     <div class="fbtns"><button class="btn primary" id="wtgo">Start test</button></div>
-    <div class="tnote qnote" hidden>Runs a dry print from the levelling on, without UV: calibrate (zero in air), probe for the resin, level, then the layers. The first wait follows the levelling directly (layer 1, as in a print); in every later layer the tilt releases and returns with the speeds and stages of the Tilt speed card and the plate rises, then the test waits and measures how long the force takes to settle (the force change over the last window below the Dynamic wait value). There is no maximum wait and the minimum wait is not used. The motions follow a print: the tilt releases first, then the plate rises by one layer height while the tilt returns. Nothing is cured, so the gap under the plate grows by one layer height per layer. Wait &amp; heat follows its dashboard setting. Every run writes its own log in sglog/waittest with the layer height in the name; the logs can be downloaded and deleted below. Idle printer only; Stop (or a print) ends the test and raises the plate to 50 mm.</div>
+    <div class="tnote qnote" hidden>Runs a dry print from the levelling on, without UV: calibrate (zero in air), probe for the resin, level, then the layers. The first wait follows the levelling directly (layer 1, as in a print); in every later layer the tilt releases and returns at 36°/s and the plate rises, then the test waits and measures how long the force takes to settle (the average force of the last window differs from the average of the window before by less than the Dynamic wait change value; so at least two windows). There is no maximum wait and the minimum wait is not used. The motions follow a print: the tilt releases first, then the plate rises by one layer height while the tilt returns. Nothing is cured, so the gap under the plate grows by one layer height per layer. Wait &amp; heat follows its dashboard setting. Every run writes its own log in sglog/waittest with the layer height in the name; the logs can be downloaded and deleted below. Idle printer only; Stop (or a print) ends the test and raises the plate to 50 mm.</div>
     <div class="tnote" style="color: var(--warn)">Needs resin in the vat, the build plate fitted and the lid closed. The plate goes down into the resin and presses on the vat floor with the levelling force, like a print start.</div>
     <div class="sec" style="border-top: 1px solid var(--line); margin-top: 12px; padding-top: 10px">
       <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap"><div class="label">Test logs</div><span class="sub" id="wtlogsub"></span></div>
@@ -1620,7 +1656,7 @@ const THUMBS = "/media/mmcblk0p1/file_info/";
 const CUR = {0: "Idle", 1: "Printing", 2: "File transfer", 3: "Exposure test", 4: "Device test"};
 const PRINT = {0: "", 1: "Homing", 2: "Dropping", 3: "Exposing", 4: "Lifting", 5: "Pausing",
                6: "Paused", 7: "Stopping", 8: "Stopped", 9: "Complete", 10: "Checking file"};
-const PHASE = {start: "Start", calibrate: "Calibrate", probe: "Probe", level: "Level", layer: "Layer",
+const PHASE = {start: "Start", calibrate: "Calibrate", probe: "Probe", level: "Level", layer: "Wait", wait: "Wait",
                exposure: "Exposure", rest: "Rest", lift: "Lift", drop: "Retract", settle: "Settle"};
 // readings: [seq, t, raw, phase, layer, job csv]; L = last live.json
 // highest / lowest reading of each layer (of the readings kept, ~15 min): Map "csv|layer" -> {mx: reading, mn: reading}
@@ -2156,7 +2192,7 @@ async function authPoll() {
 // Every control that writes to the printer (through sgwebd): greyed while logged out, a click opens the login dialog instead.
 // Draft edits (dial steps, number boxes) and the controls that only open a card stay usable. Not covered: the app's own
 // print control, file delete and upload (SDCP on :3030).
-const WRITE_SEL = ["#tare", "#auto", "label:has(#auto)", "#heatapply", "#dwapply", "#dwm2", "#dwn", "#uapply", "#setsave", "#setrestore", "#setdef",
+const WRITE_SEL = ["#tare", "#auto", "label:has(#auto)", "#heatapply", "#dwapply", "#dwm2", "#dwn", "#dwg2", "#dww2", "#dwng", "#uapply", "#setsave", "#setrestore", "#setdef",
   "#dlon", "label:has(#dlon)", "#dlapply", "#dlreset", "#xmminus", "#xmplus", "#xmgo", '[data-xm]:not([data-xm="c"])', "#exapply", "#exrevert", "#exsw", "#rpsw", "label:has(#rpsw)", "#rpsave", "#rpnew", "#rpdel", "#rpadd", "#rpcancel", "label:has(#exsw)", "#mxsw", "label:has(#mxsw)", "#mxfrom", "#mxfromm", "#mxfromp", "#jlsw", "label:has(#jlsw)", "#mxstate", "#qmap input", "#qmap button", "#dwstate", "#hstate", "#gsstate", "#dlstate", "#exstate", "#fxstate", "#tcstate",
   "#fxsw", "#fxoff", "#fxon", "#slapply", "#tapply", "#tcon", "label:has(#tcon)", "#gsapply", "#gssearch", "#slbeep", "label:has(#slbeep)", "#slbtest",
   "#slsave", "#sldel", "#hdel", "#htldel", "#mapply", "#calopen", "#calapply", "#logall", "#pwchange", "#stockrestore",
@@ -2364,9 +2400,14 @@ $("heatapply").addEventListener("click", async () => {
 // ---------- dynamic wait after retract (sgwait.c, via "wait DW WH GRAD WIN MIN") ----------
 // The Force card shows the wait in progress; the card edits a draft like the heating card.
 // Wait & heat (Resin heating card) is independent of it.
-const DW = {open: false, busy: false};
+const DW = {open: false, busy: false, hov: null};
 const waitLine = (dw, wh, g, w, m, db, wt) => `wait ${dw ? 1 : 0} ${wh ? 1 : 0} ${(+g).toFixed(2)} ${(+w).toFixed(1)} ${(+m).toFixed(1)} ${db ? 1 : 0} ${wt ? 1 : 0}`;
+// the change value / window of a wait: layers 1..ng use the first set, layers after ng the second set (ng = 0: the second for the whole print); layer0 = 0-based layer
+const effGrad = (W, layer0) => W.ng !== undefined && (W.ng === 0 || (layer0 | 0) + 1 > W.ng) ? W.grad2 : W.grad;
+const effWin = (W, layer0) => W.ng !== undefined && (W.ng === 0 || (layer0 | 0) + 1 > W.ng) ? W.win2 : W.win;
 const clampW = (id, v) => { const i = $(id); return Math.min(i.max === "" ? Infinity : +i.max, Math.max(+i.min, Math.round(v / +i.step) * +i.step)); };   // no max attribute = no upper limit
+// the card's boxes as one string: what Apply sent is remembered, so the button stays faded until the printer reports the new values
+const dwSig = () => JSON.stringify(["dwg", "dww", "dwm", "dwm2", "dwn", "dwg2", "dww2", "dwng"].map(i => $(i).value).concat($("dwdb").checked));
 const fmtS = s => s >= 60 ? `${Math.round(s / 60)} min` : `${s.toFixed(1)} s`;
 
 function waitOpen(open) {
@@ -2378,11 +2419,28 @@ function waitOpen(open) {
   if (open) {
     $("dwon").checked = !!W.dw; $("dwdb").checked = !!W.db;
     $("dwg").value = W.grad.toFixed(2); $("dww").value = W.win.toFixed(1); $("dwm").value = W.min.toFixed(1);
-    if (W.min2 !== undefined) { $("dwm2").value = W.min2.toFixed(1); $("dwn").value = W.min2n; }
+    if (W.min2 !== undefined) { $("dwm2").value = W.min2.toFixed(1); $("dwn").value = W.min2n; if (W.ng !== undefined) { $("dwg2").value = W.grad2.toFixed(2); $("dww2").value = W.win2.toFixed(1); $("dwng").value = W.ng; } }
     waitRender();
   }
 }
 
+function wbTip(W, w, bw) {
+  const tip = $("wbtip"), x = DW.hov != null && W && W.last ? W.last[DW.hov] : null;
+  if (!x) { tip.style.display = "none"; return; }
+  tip.innerHTML = `<b>Layer ${x[0]}</b><br>Wait <b class="ok-txt">${x[1].toFixed(1)} s</b><br>${["settled", "reached the maximum", "slicer wait"][x[2]]}${x[3] ? " · <span class=\"warm\">heated</span>" : ""}`;
+  tip.style.display = "block";
+  tip.style.left = Math.min(Math.max(DW.hov * bw + bw / 2 + 10, 0), Math.max(0, w - tip.offsetWidth)) + "px";
+  tip.style.top = "0px";
+}
+function wbMove(e) {
+  const W = wait(), svg = $("wbars");
+  if (!W || !W.last || !W.last.length) return;
+  const w = svg.clientWidth || 520, bw = (w - 46) / 30, i = Math.floor((e.clientX - svg.getBoundingClientRect().left) / bw);
+  DW.hov = i >= 0 && i < W.last.length ? i : null;
+  waitBars(W);
+}
+$("wbars").parentElement.addEventListener("pointermove", wbMove);
+$("wbars").parentElement.addEventListener("pointerleave", () => { DW.hov = null; const W = wait(); if (W) waitBars(W); });
 function waitBars(W) {
   const svg = $("wbars"), w = svg.clientWidth || 520, h = 84, top = 10, base = 70;
   const last = W.last || [], mx = Math.max(W.max || 0, ...last.map(x => x[1]), 1), n = 30, bw = (w - 46) / n;
@@ -2391,13 +2449,19 @@ function waitBars(W) {
     `<line x1="0" y1="${base + .5}" x2="${w - 46}" y2="${base + .5}" stroke="var(--axis)"/>`;
   last.forEach((x, i) => {
     const bh = Math.max(1, x[1] / mx * (base - top)), xx = i * bw + 2;
-    o += `<rect x="${xx.toFixed(1)}" y="${(base - bh).toFixed(1)}" width="${(bw - 4).toFixed(1)}" height="${bh.toFixed(1)}" fill="${x[2] === 0 ? "var(--cgreen)" : x[2] === 1 ? "var(--cyellow)" : "var(--swoff)"}"><title>Layer ${x[0]}: ${x[1].toFixed(1)} s, ${["settled", "maximum", "slicer wait"][x[2]]}${x[3] ? ", heated" : ""}</title></rect>`;
+    o += `<rect x="${xx.toFixed(1)}" y="${(base - bh).toFixed(1)}" width="${(bw - 4).toFixed(1)}" height="${bh.toFixed(1)}" fill="${x[2] === 0 ? "var(--cgreen)" : x[2] === 1 ? "var(--cyellow)" : "var(--swoff)"}"></rect>`;
     if (x[3]) o += `<circle cx="${(xx + bw / 2 - 2).toFixed(1)}" cy="${(base - bh - 5).toFixed(1)}" r="2.5" fill="var(--cyellow)"/>`;
   });
+  if (DW.hov != null && last[DW.hov]) {                       // pointer cursor (like the Force card): dashed line through the bar, bar outlined
+    const cx = DW.hov * bw + bw / 2, bh = Math.max(1, last[DW.hov][1] / mx * (base - top));
+    o += `<line x1="${cx.toFixed(1)}" y1="${top - 4}" x2="${cx.toFixed(1)}" y2="${base}" stroke="var(--ink2)" stroke-width="1" stroke-dasharray="3 3"/>` +
+      `<rect x="${(DW.hov * bw + 2).toFixed(1)}" y="${(base - bh).toFixed(1)}" width="${(bw - 4).toFixed(1)}" height="${bh.toFixed(1)}" fill="none" stroke="var(--ink)" stroke-width="1.5"/>`;
+  }
   [0, last.length >> 1, last.length - 1].forEach(i => { if (last[i]) o += `<text x="${(i * bw + bw / 2).toFixed(1)}" y="82" fill="var(--muted2)" font-size="11" text-anchor="middle">${last[i][0]}</text>`; });
   if (!last.length) o += `<text x="${(w - 46) / 2}" y="44" fill="var(--muted)" font-size="12" text-anchor="middle">No layers yet this job</text>`;
   svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
   svg.innerHTML = o;
+  wbTip(W, w, bw);
   waitLastInfo(W);
 }
 
@@ -2429,28 +2493,36 @@ function waitRender() {
       `Layer ${W.layer}: settling… ${W.el.toFixed(1)} s`) : printing ? "On · between waits" : "On · waiting for a print";
     $("dwmax").textContent = W.active ? `max ${W.max.toFixed(0)} s` : "";
     $("dwbar").style.width = W.active && W.max > 0 ? Math.min(100, W.el / W.max * 100) + "%" : "0%";
-    $("dwgrad").innerHTML = W.active && !W.fixed ? `Force changed <b>${W.g >= 0 ? (W.g * W.win).toFixed(2) + " g" : "–"}</b> in the last ${W.win.toFixed(1)} s · needs &lt; ${W.grad.toFixed(2)} g` :
-      `Settled: &lt; ${W.grad.toFixed(2)} g over ${W.win.toFixed(1)} s · min ${(W.min2 !== undefined && !W.min2n ? W.min2 : W.min).toFixed(1)} s`;
+    $("dwgrad").innerHTML = W.active && !W.fixed ? `Force changed <b>${W.g >= 0 ? (W.g * effWin(W, W.layer)).toFixed(2) + " g" : "–"}</b> in the last ${effWin(W, W.layer).toFixed(1)} s · needs &lt; ${effGrad(W, W.layer).toFixed(2)} g` :
+      `Settled: &lt; ${effGrad(W, 0).toFixed(2)} g over ${effWin(W, 0).toFixed(1)} s · min ${(W.min2 !== undefined && !W.min2n ? W.min2 : W.min).toFixed(1)} s` + (W.ng > 0 && (Math.abs(W.grad2 - W.grad) > 0.004 || Math.abs(W.win2 - W.win) > 0.049) ? ` (set 2 after layer ${W.ng}: &lt; ${W.grad2.toFixed(2)} g over ${W.win2.toFixed(1)} s)` : "") + (W.min2n > 0 && Math.abs(W.min2 - W.min) > 0.049 ? ` (Min Wait after layer ${W.min2n}: ${W.min2.toFixed(1)} s)` : "");
     $("dwsaved").innerHTML = W.n ? `Saved this job <b class="ok-txt">${fmtS(W.saved)}</b>` : "";
   }
   if (!DW.open) return;
   $("dwstate").textContent = W.dw ? "On" : "Off";
   $("dwstate").className = "status" + (W.dw ? " printing" : "");
   $("dwsub").textContent = W.n ? `${W.n} layers this job · ${W.ns} settled, ${W.nm} reached the maximum` : "No layers yet this job";
-  $("dwmaxnote").innerHTML = `While the dynamic wait is on the slicer's wait after retract is ignored on every layer where it is active: the wait lasts until the resin has settled (the change, window and minimum above), even when the slicer's value is shorter` + (W.max > 0 ? ` (this print: <b>${W.max.toFixed(0)} s</b>)` : "") + `. Safety: it ends after 10 min at the latest if the force never settles.`;
+  $("dwmaxnote").innerHTML = `While the dynamic wait is on the slicer's wait after retract is ignored on every layer where it is active: the wait lasts until the resin has settled (the change, window and minimum above), even when the slicer's value is shorter` + (W.max > 0 ? ` (this print: <b>${W.max.toFixed(0)} s</b>)` : "") + `. Safety: it ends after 15 min at the latest if the force never settles.`;
   $("dwon").checked = !!W.dw;                                   // the On / Off status line is the switch (no draft any more)
   $("dwbotn").textContent = W.botf ? `· this print: ${W.botn}, from the print file` : `· first ${W.botn} layers (the print file did not tell)`;
-  $("dwnbox").hidden = $("dwm2box").hidden = W.min2 === undefined;   // an older library has no second minimum
-  for (const id of ["dwg", "dww", "dwm", "dwdb", "dwm2", "dwn"]) $(id).disabled = !$("dwon").checked;
-  const lay0 = W.min2 !== undefined && !(+$("dwn").value > 0);                  // Layer 0: Min wait ≥ layer applies to the whole print, Min wait < layer is greyed out
+  $("dwnbox").hidden = $("dwm2box").hidden = W.min2 === undefined; $("dwswbar").hidden = $("dwg2row").hidden = W.ng === undefined;   // an older library has no second minimum
+  for (const id of ["dwg", "dww", "dwm", "dwdb", "dwm2", "dwn", "dwg2", "dww2", "dwng"]) $(id).disabled = !$("dwon").checked;
+  const lay0 = W.min2 !== undefined && !(+$("dwn").value > 0);                  // Layer N = 0: Min wait after layer applies to the whole print, Min wait up to layer is greyed out
   $("dwm").disabled = !$("dwon").checked || lay0;
   $("dwm").closest(".hbox").style.opacity = lay0 ? ".45" : "";
   document.querySelectorAll("#dwm2row [data-w=dwm]").forEach(b => { b.disabled = !$("dwon").checked || lay0; });
+  const lay0g = W.ng !== undefined && !(+$("dwng").value > 0);                  // N = 0 of the change / over row: the second set applies to the whole print, the first is greyed out
+  for (const id of ["dwg", "dww"]) {
+    $(id).disabled = !$("dwon").checked || lay0g;
+    $(id).closest(".hbox").style.opacity = lay0g ? ".45" : "";
+    document.querySelectorAll(`[data-w=${id}]`).forEach(b => { b.disabled = !$("dwon").checked || lay0g; });
+  }
   waitBars(W);
   // Apply is faded out while nothing differs from what the printer runs (the On / Off switch applies by itself)
-  const dirty = Math.abs((+$("dwg").value) - W.grad) > 0.004 || Math.abs((+$("dww").value) - W.win) > 0.049 ||
+  const dirtyW = Math.abs((+$("dwg").value) - W.grad) > 0.004 || Math.abs((+$("dww").value) - W.win) > 0.049 ||
     Math.abs((+$("dwm").value) - W.min) > 0.049 ||
-    (W.min2 !== undefined && (Math.abs((+$("dwm2").value) - W.min2) > 0.049 || (+$("dwn").value || 0) !== W.min2n)) || $("dwdb").checked !== !!W.db;
+    (W.min2 !== undefined && (Math.abs((+$("dwm2").value) - W.min2) > 0.049 || (+$("dwn").value || 0) !== W.min2n)) || (W.ng !== undefined && (Math.abs((+$("dwg2").value) - W.grad2) > 0.004 || Math.abs((+$("dww2").value) - W.win2) > 0.049 || (+$("dwng").value || 0) !== W.ng)) || $("dwdb").checked !== !!W.db;
+  if (DW.sent && (!dirtyW || Date.now() > DW.hold)) DW.sent = null;       // the printer reports what was applied (or 6 s passed)
+  const dirty = DW.sent ? dwSig() !== DW.sent : dirtyW;
   $("dwapply").disabled = DW.busy || !dirty;
 }
 
@@ -2458,10 +2530,10 @@ $("dwopen").addEventListener("click", () => waitOpen(!DW.open));
 $("dwclose").addEventListener("click", () => waitOpen(false));
 for (const b of document.querySelectorAll("#dwcard .sb")) b.addEventListener("click", () => {
   const i = $(b.dataset.w), stp = +b.dataset.st || +i.step;        // the gradient box types 0.01 but its buttons step 0.1
-  i.value = clampW(b.dataset.w, (+i.value || +i.min) + +b.dataset.d * stp).toFixed(b.dataset.w === "dwg" ? 2 : +i.step >= 1 ? 0 : 1); waitRender(); });
-for (const id of ["dwg", "dww", "dwm", "dwm2", "dwn"])
-  $(id).addEventListener("change", () => { $(id).value = clampW(id, +$(id).value || +$(id).min).toFixed(id === "dwn" ? 0 : id === "dwg" ? 2 : 1); waitRender(); });
-for (const id of ["dwg", "dww", "dwm", "dwm2", "dwn"]) $(id).addEventListener("input", waitRender);
+  i.value = clampW(b.dataset.w, (+i.value || +i.min) + +b.dataset.d * stp).toFixed(b.dataset.w === "dwg" || b.dataset.w === "dwg2" ? 2 : +i.step >= 1 ? 0 : 1); waitRender(); });
+for (const id of ["dwg", "dww", "dwm", "dwm2", "dwn", "dwg2", "dww2", "dwng"])
+  $(id).addEventListener("change", () => { $(id).value = clampW(id, +$(id).value || +$(id).min).toFixed(id === "dwn" || id === "dwng" ? 0 : id === "dwg" || id === "dwg2" ? 2 : 1); waitRender(); });
+for (const id of ["dwg", "dww", "dwm", "dwm2", "dwn", "dwg2", "dww2", "dwng"]) $(id).addEventListener("input", waitRender);
 $("dwon").addEventListener("change", waitRender);
 $("dwdb").addEventListener("change", waitRender);
 
@@ -2472,7 +2544,8 @@ $("dwapply").addEventListener("click", async () => {
   try {
     const db = $("dwdb").checked;
     await cmd(waitLine(on, W && W.wh, g, w, m, db, W && W.wt));       // the card stays open: only the x closes it
-    if (W && W.min2 !== undefined) await cmd(`waitmin2 ${clampW("dwm2", +$("dwm2").value).toFixed(1)} ${clampW("dwn", +$("dwn").value || 0)}`);
+    if (W && W.min2 !== undefined) await cmd(`waitmin2 ${clampW("dwm2", +$("dwm2").value).toFixed(1)} ${clampW("dwn", +$("dwn").value || 0)}` + (W.ng !== undefined ? ` ${clampW("dwg2", +$("dwg2").value).toFixed(2)} ${clampW("dww2", +$("dww2").value).toFixed(1)} ${clampW("dwng", +$("dwng").value || 0)}` : ""));
+    DW.sent = dwSig(); DW.hold = Date.now() + 6000;
     toast(on ? `Dynamic wait on: < ${g.toFixed(2)} g over ${w.toFixed(1)} s, min ${m.toFixed(1)} s, bottom layers ${db ? "too" : "excluded"}` :
       "Dynamic wait off (printer default)");
   } catch (e) { toast("Dynamic wait: " + e.message, true); }
@@ -3219,8 +3292,8 @@ function wtChart(T) {
   const vmax = Math.max(10, ...vals, cur), ymax = Math.ceil(vmax * 1.1 / 10) * 10, bw = (X1 - X0) / slots;
   const y = v => Y0 - (Y0 - YT) * Math.min(v, ymax) / ymax;
   let o = `<line x1="${X0}" y1="${Y0}" x2="${X1}" y2="${Y0}" stroke="var(--line)"/><text x="2" y="${Y0 + 3}">0</text><text x="2" y="${y(ymax) + 8}">${ymax} s</text>`;
-  vals.forEach((v, i) => { o += `<rect x="${(X0 + i * bw + 1).toFixed(1)}" y="${y(v).toFixed(1)}" width="${Math.max(1, bw - 2).toFixed(1)}" height="${(Y0 - y(v)).toFixed(1)}" fill="var(--cgreen)"><title>layer ${first + i + 1}: ${v.toFixed(1)} s</title></rect>`; });
-  if (cur >= 0) { const i = vals.length; o += `<rect x="${(X0 + i * bw + 1).toFixed(1)}" y="${y(cur).toFixed(1)}" width="${Math.max(1, bw - 2).toFixed(1)}" height="${(Y0 - y(cur)).toFixed(1)}" fill="var(--cblue)" opacity=".75"/>`; }
+  vals.forEach((v, i) => { o += `<rect x="${(X0 + i * bw + 1).toFixed(1)}" y="${y(v).toFixed(1)}" width="${Math.max(1, bw - 2).toFixed(1)}" height="${(Y0 - y(v)).toFixed(1)}" fill="var(--cgreen)"/><rect class="wtbar" data-tip="Layer ${first + i + 1}: ${v.toFixed(1)} s" x="${(X0 + i * bw).toFixed(1)}" y="${YT}" width="${bw.toFixed(1)}" height="${Y0 - YT}" fill="transparent"/>`; });
+  if (cur >= 0) { const i = vals.length; o += `<rect x="${(X0 + i * bw + 1).toFixed(1)}" y="${y(cur).toFixed(1)}" width="${Math.max(1, bw - 2).toFixed(1)}" height="${(Y0 - y(cur)).toFixed(1)}" fill="var(--cblue)" opacity=".75"/><rect class="wtbar" data-tip="Layer ${first + i + 1}: ${cur.toFixed(1)} s (running)" x="${(X0 + i * bw).toFixed(1)}" y="${YT}" width="${bw.toFixed(1)}" height="${Y0 - YT}" fill="transparent"/>`; }
   const step = slots > 30 ? 10 : slots > 12 ? 5 : 1;
   for (let i = 0; i < slots; i++) if ((first + i + 1) % step === 0 || i === 0) o += `<text x="${(X0 + i * bw + bw / 2).toFixed(1)}" y="${Y0 + 12}" text-anchor="middle">${first + i + 1}</text>`;
   return o;
@@ -3245,10 +3318,10 @@ function wtRender() {
   if (run) $("wtchips").innerHTML = order.map((p, i) => `<span class="${ph === "prep" ? "" : i < idx || idx < 0 ? "done" : i === idx ? "now" : ""}">${p[0].toUpperCase() + p.slice(1)}</span>`).join("") +
     `<span class="${idx < 0 && ph !== "prep" ? "now" : ""}">Layers ${T.layer + 1} / ${T.n}</span>`;
   $("wtlive").hidden = !(run && ph === "wait");
-  if (run && ph === "wait") $("wtlive").innerHTML = `<div><b>${T.el.toFixed(1)}</b><small>s since the retract</small></div><div><b style="font-size:22px">${T.g >= 0 ? (T.g * T.win).toFixed(2) : "–"}</b><small>g in the last ${T.win.toFixed(1)} s (needs &lt; ${T.grad.toFixed(2)})</small></div>`;
+  if (run && ph === "wait") $("wtlive").innerHTML = `<div><b>${T.el.toFixed(1)}</b><small>s since the retract</small></div><div><b style="font-size:22px">${T.g >= 0 ? T.g.toFixed(2) : "–"}</b><small>g between the last two ${Math.min(T.win, 380).toFixed(0)} s averages (needs &lt; ${T.grad.toFixed(2)})${T.g < 0 ? " · needs " + (2 * Math.min(T.win, 380)).toFixed(0) + " s of readings" : ""}</small></div>`;
   const showChart = run || T.st === 2 || T.st === 3 && T.res.length;
   $("wtchart").style.display = showChart ? "block" : "none"; if (showChart) { const c = wtChart(T); if ($("wtchart").innerHTML !== c) $("wtchart").innerHTML = c; }
-  $("wtset").textContent = `Settled when the force changes by less than ${T.grad.toFixed(2)} g over ${T.win.toFixed(1)} s (the Dynamic wait values) · no maximum wait · the minimum wait is not used · tilt speeds and Wait & heat as set` + (run && T.file ? ` · log ${T.file}` : "");
+  $("wtset").textContent = `Settled when the average of the last ${Math.min(T.win, 380).toFixed(0)} s differs from the average of the ${Math.min(T.win, 380).toFixed(0)} s before by less than ${T.grad.toFixed(2)} g (the Dynamic wait window and change values) · at least ${(2 * Math.min(T.win, 380)).toFixed(0)} s · no maximum wait · the minimum wait is not used · tilt always 36°/s, Wait & heat as set` + (run && T.file ? ` · log ${T.file}` : "");
   const off = run || locked || WT.busy;
   for (const id of ["wth", "wtn", "wthm", "wthp", "wtnm", "wtnp"]) $(id).disabled = run;
   for (const b of $("wtpre").querySelectorAll("button")) { b.disabled = run; b.classList.toggle("on", Math.abs(+b.dataset.h - wtH()) < 0.0005); }
@@ -3256,6 +3329,15 @@ function wtRender() {
   $("wtgo").disabled = WT.busy || (!run && locked);
   if (T.st === 1 || Date.now() - WT.logT > 15000) { if (T.st === 1 && Date.now() - WT.logT > 5000 || T.st !== 1) wtLoadLogs(); }
 }
+(() => {
+  const tip = document.createElement("div");
+  tip.style.cssText = "position:fixed;z-index:9999;pointer-events:none;padding:3px 8px;border-radius:6px;font-size:12px;background:var(--card,#222);color:var(--ink,#fff);border:1px solid var(--line,#555);box-shadow:0 2px 8px rgba(0,0,0,.4);display:none;white-space:nowrap";
+  document.body.appendChild(tip);
+  const ch = $("wtchart");
+  ch.addEventListener("mousemove", e => { const r = e.target.closest && e.target.closest(".wtbar"); if (!r) { tip.style.display = "none"; return; }
+    tip.textContent = r.dataset.tip; tip.style.display = "block"; tip.style.left = Math.min(e.clientX + 12, innerWidth - tip.offsetWidth - 4) + "px"; tip.style.top = (e.clientY - 30) + "px"; });
+  ch.addEventListener("mouseleave", () => { tip.style.display = "none"; });
+})();
 function wtSave() { try { localStorage.sgwth = $("wth").value; localStorage.sgwtn = $("wtn").value; } catch (e) {} }
 $("wtopen").addEventListener("click", () => wtOpen(!WT.open));
 $("wtclose").addEventListener("click", () => wtOpen(false));
@@ -3302,7 +3384,9 @@ $("wtdel").addEventListener("click", async () => {
 });
 
 // ---------- Exposure times (sgexpo.c): file vs used per layer, "expo B N" (ms, "-" = the file's value) / "expo off" ----------
-const EX = {open: false, b: null, n: null, bd: false, nd: false, busy: false, last: null};   // last = the "expo B N" line applied in this job (for the Features toggle)
+let exMem = null; try { exMem = localStorage.getItem("sgexmem"); } catch (e) {}              // the last "expo B N" line the user applied (survives a reload and the end of a job: the override itself ends with the job, the times are remembered)
+const exMemMs = () => { const m = exMem && exMem.match(/^expo (\S+) (\S+)$/); return m ? [m[1], m[2]].map(x => /^\d+$/.test(x) ? +x / 1000 : null) : [null, null]; };
+const EX = {open: false, b: null, n: null, bd: false, nd: false, busy: false, last: null, hov: null};   // last = the "expo B N" line applied in this job (for the Features toggle)
 const exSec = ms => ms >= 10000 ? (ms / 1000).toFixed(1) : (ms / 1000).toFixed(2);
 const exFmt = ms => ms == null || ms < 0 ? "–" : exSec(ms) + " s";
 function exOpen(open) {
@@ -3311,6 +3395,39 @@ function exOpen(open) {
   if (open) { EX.bd = EX.nd = false; EX.b = EX.n = null; exRender(); }
 }
 function exCls(E, layer) { return layer < E.bot ? 0 : layer < E.bot + E.trans ? 1 : 2; }
+// what the chart knows about one layer (0-based): file time, used time (exposed layers: the run it belongs to; later layers: the pending edit), edited flag
+function exAt(E, l) {
+  const c = exCls(E, l), run = E.runs.find(r => l >= r[0] && l <= r[1]);
+  const fb = E.fb >= 0 ? E.fb : E.hok ? E.hb : -1, fn = E.fn >= 0 ? E.fn : E.hok ? E.hn : -1;
+  const file = run ? run[2] : c === 0 ? fb : c === 2 ? fn : -1;
+  if (run) return {l, c, file, used: run[4], edited: run[3] >= 0, done: true};
+  const plan = c === 0 && E.bon ? E.b : c === 2 && E.non ? E.n : null;
+  return {l, c, file, used: plan, edited: plan != null, done: false};
+}
+function exTip(E) {
+  const tip = $("extip"), svg = $("exchart").querySelector("svg");
+  if (!E || !E.job || EX.hov == null || !svg) { tip.style.display = "none"; return; }
+  const total = E.total > 0 ? E.total : Math.max(100, E.layer + 50);
+  if (EX.hov < 0 || EX.hov >= total) { tip.style.display = "none"; return; }
+  const a = exAt(E, EX.hov), name = ["bottom", "transition", "normal"][a.c];
+  tip.innerHTML = `<b>Layer ${a.l + 1}</b> · ${name}` + (a.l === E.layer ? " · now" : "") +
+    `<br>File <b>${exFmt(a.file)}</b>` +
+    (a.used != null ? `<br>${a.done ? "Used" : "Will use"} <b${a.edited ? ' class="warm"' : ""}>${exFmt(a.used)}</b>${a.edited ? " · edited" : ""}` : `<br>${a.done ? "" : "not exposed yet"}`);
+  tip.style.display = "block";
+  const W = svg.getBoundingClientRect().width, px = (40 + 460 * (a.l + .5) / total) / 520 * W;
+  tip.style.left = Math.min(Math.max(px + 10, 0), Math.max(0, W - tip.offsetWidth)) + "px";
+  tip.style.top = "0px";
+}
+function exMove(e) {
+  const E = L && L.expo, svg = $("exchart").querySelector("svg");
+  if (!E || !E.job || !svg) return;
+  const r = svg.getBoundingClientRect(), total = E.total > 0 ? E.total : Math.max(100, E.layer + 50);
+  const l = Math.floor(((e.clientX - r.left) / r.width * 520 - 40) / 460 * total);
+  EX.hov = l >= 0 && l < total ? l : null;
+  $("exchart").innerHTML = exChart(E); exTip(E);
+}
+$("exwrap").addEventListener("pointermove", exMove);
+$("exwrap").addEventListener("pointerleave", () => { EX.hov = null; const E = L && L.expo; if (E && E.job) $("exchart").innerHTML = exChart(E); exTip(null); });
 function exChart(E) {
   const X0 = 40, X1 = 500, Y0 = 100, YT = 16;
   const total = E.total > 0 ? E.total : Math.max(100, E.layer + 50), tr0 = E.bot + E.trans;
@@ -3339,6 +3456,11 @@ function exChart(E) {
   o += `<text x="${X0}" y="116" fill="var(--muted2)" font-size="11">1</text><text x="${(X0 + X1) / 2}" y="116" fill="var(--muted2)" font-size="11" text-anchor="middle">${Math.round(total / 2)}</text><text x="${X1}" y="116" fill="var(--muted2)" font-size="11" text-anchor="end">${total}</text>`;
   if (E.bot) o += `<text x="${x(E.bot / 2).toFixed(1)}" y="128" fill="var(--muted2)" font-size="10" text-anchor="middle">bottom</text>`;
   if (E.trans) o += `<text x="${x(E.bot + E.trans / 2).toFixed(1)}" y="128" fill="var(--muted2)" font-size="10" text-anchor="middle">trans.</text>`;
+  const hi = EX.hov != null && EX.hov >= 0 && EX.hov < total ? exAt(E, EX.hov) : null;     // pointer cursor (like the Force card): line + dot on the used level
+  if (hi) {
+    o += `<line x1="${x(EX.hov + .5).toFixed(1)}" y1="${YT - 4}" x2="${x(EX.hov + .5).toFixed(1)}" y2="${Y0}" stroke="var(--ink2)" stroke-width="1" stroke-dasharray="3 3"/>`;
+    if (hi.used != null) o += `<circle cx="${x(EX.hov + .5).toFixed(1)}" cy="${y(hi.used).toFixed(1)}" r="4" fill="${hi.edited ? "var(--cyellow)" : "var(--cgreen)"}" stroke="var(--card)" stroke-width="2"/>`;
+  }
   return `<svg viewBox="0 0 520 134" role="img" aria-label="Exposure time per layer, file and used">${o}</svg>`;
 }
 function exRender() {
@@ -3360,15 +3482,16 @@ function exRender() {
   if (ban.length) $("exban").innerHTML = `<b>EDITED</b>${ban.join(" · ")} ${job ? "from the next layer" : "for the next print job"}. Ends with ${job ? "the job" : "that job"}.`;
   $("exlegy").hidden = !(edited || E.runs.some(r => r[3] >= 0));
   document.querySelector("#excard .exhead").style.display = job ? "" : "none";
-  $("exchart").innerHTML = job ? exChart(E) : "";
+  $("exchart").innerHTML = job ? exChart(E) : ""; exTip(job ? E : null);
   const nn = E.total ? Math.max(0, E.total - E.bot - E.trans) : null;
   const tile = (lab, val, sub, hl) => `<div class="stat"><span class="label">${lab}</span><b${hl ? ' style="color: var(--warn)"' : ""}>${val}</b><div class="sub">${sub}</div></div>`;
   $("extiles").innerHTML = job ? tile("Bottom", exFmt(E.bon ? E.b : E.fb), `${E.bot} layers · ${E.bon ? "edited" : "file"}`, E.bon)
     + tile("Transition", E.trans ? "graded" : "none", `${E.trans} layers`, false)
     + tile("Normal", exFmt(E.non ? E.n : E.fn), `${nn == null ? "?" : nn} layers · ${E.non ? "edited" : "file"}`, E.non) : "";
   // fields: show the value in force (or the file's), keep what the user is typing
-  if (!EX.bd) EX.b = E.bon ? E.b / 1000 : E.fb >= 0 ? E.fb / 1000 : null;
-  if (!EX.nd) EX.n = E.non ? E.n / 1000 : E.fn >= 0 ? E.fn / 1000 : null;
+  const [mb, mn] = exMemMs();                               // no job: the file values are unknown, show the remembered times (not applied until Apply / the switch)
+  if (!EX.bd) EX.b = E.bon ? E.b / 1000 : E.fb >= 0 ? E.fb / 1000 : mb;
+  if (!EX.nd) EX.n = E.non ? E.n / 1000 : E.fn >= 0 ? E.fn / 1000 : mn;
   for (const [id, v, d, on] of [["exbv", EX.b, EX.bd, E.bon], ["exnv", EX.n, EX.nd, E.non]]) {
     const el = $(id); if (document.activeElement !== el) el.value = v == null ? "" : +v.toFixed(2);
     el.classList.toggle("ed", d || !!on); el.disabled = !E.mode;
@@ -3392,7 +3515,7 @@ async function exApply() {
   };
   const b = part(EX.b, EX.bd, E.bon, E.fb), n = part(EX.n, EX.nd, E.non, E.fn);
   EX.busy = true; exRender();
-  try { await cmd(b === "-" && n === "-" ? "expo off" : `expo ${b} ${n}`); EX.last = b === "-" && n === "-" ? null : `expo ${b} ${n}`; EX.bd = EX.nd = false; toast("Manual exposure set: from the next layer"); }
+  try { await cmd(b === "-" && n === "-" ? "expo off" : `expo ${b} ${n}`); EX.last = b === "-" && n === "-" ? null : `expo ${b} ${n}`; if (EX.last) { exMem = EX.last; try { localStorage.setItem("sgexmem", exMem); } catch (e) {} } EX.bd = EX.nd = false; toast(E.job ? "Manual exposure set: from the next layer" : "Manual exposure set: it applies from the first layer of the next job"); }
   catch (e) { toast("Exposure: " + e.message, true); }
   EX.busy = false; exRender();
 }
@@ -3926,8 +4049,8 @@ function featRows() {
     const eon = !!(E.bon || E.non);
     exrows.push({key: "mex", name: "Manual Exposure", on: eon, open: () => exOpen(true),
       val: eon ? [E.bon ? `bottom ${exFmt(E.b)}` : "", E.non ? `normal ${exFmt(E.n)}` : ""].filter(Boolean).join(" · ") : E.job ? "times from the file" : "set before or during a print",
-      dis: M && M.on ? "Multi Exposure is on: switch it off first" : !E.mode ? "The app is in a different exposure mode here" : (!eon && !EX.last ? "Set the times in the Manual Exposure card first" : ""),
-      go: () => featSend("Manual Exposure", [eon ? "expo off" : EX.last], eon ? "Manual exposure off: back to the file" : "Manual exposure on")});
+      dis: M && M.on ? "Multi Exposure is on: switch it off first" : !E.mode ? "The app is in a different exposure mode here" : (!eon && !EX.last && !exMem && !(EX.bd || EX.nd) ? "Type the exposure times in the Manual Exposure card first" : ""),
+      go: () => eon ? featSend("Manual Exposure", ["expo off"], "Manual exposure off: back to the file") : (EX.bd || EX.nd) ? exApply() : featSend("Manual Exposure", [EX.last || exMem], "Manual exposure on" + (E.job ? "" : ": from the first layer of the next job"))});
   }
   if (E && E.rp) {
     const R = E.rp, pick = R.name || (RP.list.some(p => p.name === localStorage.getItem("sgresin")) ? localStorage.getItem("sgresin") : RP.list.length ? RP.list[0].name : "");

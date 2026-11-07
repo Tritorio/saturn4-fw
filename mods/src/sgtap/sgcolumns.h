@@ -3,7 +3,7 @@ static const char *const csv_cols[][2] = {
     {"time_utc", "Wall-clock time of the row (printer clock)"},
     {"t_s", "Seconds since the print session started"},
     {"layer", "Layer number (empty before the first layer)"},
-    {"phase", "Print phase: start, probe, calibrate, level, print…"},
+    {"phase", "Print phase: start, calibrate, probe, level, wait (wait after the retract), exposure, rest, lift, drop, settle"},
     {"raw_last", "Last gauge reading, raw counts"},
     {"value", "App units: raw/100 − zero (thresholds are in these)"},
     {"value_min", "Lowest value in this 0.5 s window"},
@@ -31,5 +31,5 @@ static const char *const csv_cols[][2] = {
     {"expo_set", "Exposure override set on the dashboard, s (empty = none)"},
     {"expo_used", "Measured exposure, s"},
     {"z_ret_mm", "Print height after the retract, mm (first row of each exposure)"},
-    {"z_step_um", "Step from the previous layer, µm"},
+    {"z_step_um", "Step from the previous layer, µm (first layer: its height above the Z zero)"},
 };

@@ -70,26 +70,23 @@ static const struct { uint32_t a, w; } w_sig[] = {
 
 /* Override of the slicer's wait after retract: with the dynamic wait active on a layer, the slicer's wait is ignored,
  * even when it is shorter than what the dynamic wait decides: the wait lasts until the resin has settled (its parameters). A too short
- * slicer wait would otherwise end the wait before. Safety ceiling = 10 min, so a force that
+ * slicer wait would otherwise end the wait before. Safety ceiling = 15 min (was 10 min), so a force that
  * never settles cannot stall the printer for ever. <csvdir>/WAITOV "ON", command "waitov ON". The wait must still be running when our
  * thread sees it (20 Hz). */
 #define WOV_FILE "WAITOV"
-#define WOV_CEIL_MS 6.0e5               /* user: 10 min */
-#define WOV_NOCEIL_FILE "WAITNOMAX"      /* TEST SWITCH: <csvdir>/WAITNOMAX present = no 10 min ceiling (1e9 ms ~ 11 days, fits the app's 32-bit ms value);
-                                            delete the file to get the ceiling back (checked at every wait start) */
-#define WOV_NOCEIL_MS 1.0e9
+#define WOV_CEIL_MS 9.0e5               /* user: 10 min;: 15 min */
 static double wov_ceil_ms(void)
 {
-    char path[256];
-    snprintf(path, sizeof path, "%s/%s", sg_csvdir, WOV_NOCEIL_FILE);
-    return access(path, F_OK) == 0 ? WOV_NOCEIL_MS : WOV_CEIL_MS;
+    return WOV_CEIL_MS;                  /* always (the old WAITNOMAX test switch is gone; the Wait Times Testing has its own sequencer without a maximum) */
 }
 static struct { int on; } wov = {0};
-/* second minimum wait: from layer N (1-based) to the end the minimum is MIN2, before it wset.min; N = 0 (or 1): MIN2 for
+/* second minimum wait (changed: layers 1 .. N use wset.min, layers AFTER N use MIN2); N = 0: MIN2 for
  * the whole print (wset.min is then unused: a "wait" command / snapshot restore with N = 0 sets MIN2 to the same value).
  * Own file <csvdir>/WAIT2 "MIN2 N", command "waitmin2 MIN2 N"; not part of the settings snapshots. */
 #define WMIN2_FILE "WAIT2"
-static struct { double min2; int n; } wm2 = {1.0, 0};
+/* user: two independent sets. SET 1 = card values (change wset.grad over wset.win) for layers 1 .. ng, SET 2 = (grad2 over win2) for the layers after ng;
+ * ng = 0: set 2 for the whole print. The MINIMUM wait has its own N (n): min up to layer n, min2 after it. */
+static struct { double min2; int n; double grad2, win2; int ng; } wm2 = {1.0, 0, 1.0, 1.0, 0};
 
 
 static int w_ok;                       /* code verified */
@@ -102,9 +99,17 @@ static void sgzmon_init(void);
 static void sgmx_init(void);                             /* sgmx.c (stand-in in sgnoaa.c) */
 static volatile pid_t w_pid;           /* process running the wait thread */
 static struct { int dw, wh, db, wt; double grad, win, min; } wset = {0, 0, 1, 0, 1.0, 1.0, 1.0};
+static double wait_grad_for(int layer0)
+{
+    return layer0 + 1 > wm2.ng ? wm2.grad2 : wset.grad;      /* layers 1 .. ng: the change value of the card (wset.grad), after ng: grad2; ng = 0: grad2 for the whole print */
+}
+static double wait_win_for(int layer0)
+{
+    return layer0 + 1 > wm2.ng ? wm2.win2 : wset.win;        /* the same for the time window */
+}
 static double wait_min_for(int layer0)
 {
-    return layer0 + 1 >= wm2.n ? wm2.min2 : wset.min;
+    return layer0 + 1 > wm2.n ? wm2.min2 : wset.min;   /* user: layers 1 .. N (1-based) use wset.min, layers after N use min2; N = 0: min2 for the whole print */
 }
 typedef struct { int have, dw, wh, db, wt, au, hp, tpre, tprint, tilt, slow, ui, ui_i, ui_p, ext, gs_on, gs_au, gs_off, ov, beep, ext2, zo, t2, sen, jl, ext3, dl[5], ext4, tcon;
                 double grad, win, min, tv[13], sv[6]; long t; } wsnap_t;
@@ -296,33 +301,45 @@ static void sgwait_load(void)
     wov.on = 1;                        /* the slicer wait is always ignored while the dynamic wait is active (no switch; file WAITOV unused) */
     snprintf(path, sizeof path, "%s/%s", sg_csvdir, WMIN2_FILE);
     wm2.min2 = wset.min;               /* no WAIT2 file: the one minimum of the file WAIT for the whole print */
+    wm2.grad2 = wset.grad;             /* ... and the one change value / window */
+    wm2.win2 = wset.win;
+    wm2.ng = wm2.n;
     if (read_small(path, buf, sizeof buf) > 0) {
-        double v[2] = {1, 0};
-        if (parse_nums(buf, v, 2) == 2 && v[0] >= 1 && v[1] >= 0 && v[1] <= 99999) {
+        double v[5] = {1, 0, wset.grad, wset.win, 0};
+        int c = parse_nums(buf, v, 5);
+        if (c >= 2 && c <= 5 && v[0] >= 1 && v[1] >= 0 && v[1] <= 99999 && v[2] >= 0.05 && v[2] <= 20.0 && v[3] >= 0.6 && v[3] <= 600.0 && v[4] >= 0 && v[4] <= 99999) {
             wm2.min2 = v[0];
             wm2.n = (int)v[1];
+            wm2.grad2 = v[2];
+            wm2.win2 = v[3];
+            wm2.ng = c >= 5 ? (int)v[4] : wm2.n;     /* an older 2 / 3 field file: the same N for everything */
         }
     }
     load_saved();
 }
 
-/* "waitmin2 MIN2 N" */
+/* "waitmin2 MIN2 N [GRAD2 [WIN2 [NG]]]" (missing values stay as they are) */
 static void sgwait_min2_cmd(const char *c, char *res, size_t len)
 {
-    char path[160], line[32];
-    double v[2] = {1, 0};
-    int n;
+    char path[160], line[64];
+    double v[5] = {1, 0, wm2.grad2, wm2.win2, wm2.ng};
+    int n, cnt;
     if (!w_ok) {
         snprintf(res, len, "error: dynamic wait not available (unknown app version or disabled)");
         return;
     }
-    if (parse_nums(c, v, 2) != 2 || v[0] < 1 || v[1] < 0 || v[1] > 99999 || v[1] != (double)(int)v[1]) {
+    cnt = parse_nums(c, v, 5);
+    if (cnt < 2 || cnt > 5 || v[0] < 1 || v[1] < 0 || v[1] > 99999 || v[1] != (double)(int)v[1] || v[2] < 0.05 || v[2] > 20.0 || v[3] < 0.6 || v[3] > 600.0 ||
+        v[4] < 0 || v[4] > 99999 || v[4] != (double)(int)v[4]) {
         snprintf(res, len, "error: bad waitmin2 command");
         return;
     }
     wm2.min2 = v[0];
     wm2.n = (int)v[1];
-    n = snprintf(line, sizeof line, "%.2f %d\n", wm2.min2, wm2.n);
+    wm2.grad2 = v[2];
+    wm2.win2 = v[3];
+    wm2.ng = (int)v[4];
+    n = snprintf(line, sizeof line, "%.2f %d %.2f %.2f %d\n", wm2.min2, wm2.n, wm2.grad2, wm2.win2, wm2.ng);
     snprintf(path, sizeof path, "%s/%s", sg_csvdir, WMIN2_FILE);
     if (!write_small(path, line, n))
         snprintf(res, len, "error: set, but saving %s failed", path);
@@ -367,10 +384,10 @@ static int wait_apply(int dw, int wh, int db, int wt, double g, double w, double
     wset.win = w;
     wset.min = m;
     if (wm2.n == 0 && wm2.min2 != m) {      /* one minimum for the whole print: it stays the minimum */
-        char l2[32], p2[160];
+        char l2[64], p2[160];
         wm2.min2 = m;
         snprintf(p2, sizeof p2, "%s/%s", sg_csvdir, WMIN2_FILE);
-        write_small(p2, l2, snprintf(l2, sizeof l2, "%.2f %d\n", wm2.min2, wm2.n));
+        write_small(p2, l2, snprintf(l2, sizeof l2, "%.2f %d %.2f %.2f %d\n", wm2.min2, wm2.n, wm2.grad2, wm2.win2, wm2.ng));
     }
     n = snprintf(line, sizeof line, "%d %d %.2f %.2f %.2f %d %d\n", dw, wh, g, w, m, db, wt);
     snprintf(path, sizeof path, "%s/WAIT", sg_csvdir);
@@ -667,26 +684,44 @@ static int heater_on(void)
 }
 
 /* THERMOSTAT of a heated wait (during the wait test the vat kept rising above the target): the app's heater mode 2 (pulse, what Wait & heat
- * sets) has no temperature control, so a long wait heated without end. While a wait is heated we hold the "heating during print" target (live +0x198): the
- * heater goes off (mode 0) at the target and back on (mode 2) 0.5 C below it. Called at 20 Hz while *on_flag (wc.heating / wt_heated) is set; *off_by_gov
- * remembers that WE switched it off. A stop of the wait (heater_off / wt_heater_off) still sets mode 0 only if it is 2. */
-#define W_GOV_HYST 0.5
-static void heat_govern(int *off_by_gov)
+ * sets) has no temperature control, so a long wait heated without end. While a wait is heated we hold the "heating during print" target (live +0x198):
+ * the heater goes OFF (mode 0) at TARGET - 0.5 C; for the next 30 s it stays off (the heat still flowing in lifts the vat by about 0.9 C after the
+ * switch-off); after that it goes ON again (mode 2) as soon as the vat is at or below TARGET - 1.0 C. Called at 20 Hz while the wait is heated;
+ * *off_t = the time (us) WE switched it off, 0 = we did not. A stop of the wait (heater_off / wt_heater_off) still sets mode 0 only if it is 2. */
+#define W_GOV_OFF_BELOW 0.5          /* off at target - this */
+#define W_GOV_ON_BELOW  1.0          /* on again at target - this or lower ... */
+#define W_GOV_HOLD_US   30000000ull  /* ... but not before this long after the switch-off */
+static void heat_govern(uint64_t *off_t)
 {
     double c;
     int tgt = HI(H_MACH + 0x198);
     if (!h_ok || tgt < 20 || tgt > 60 || !sgheat_temp(&c))
         return;
-    if (!*off_by_gov && c >= (double)tgt && HW(H_DEV + 0x114) == 2) {
+    if (!*off_t && c >= (double)tgt - W_GOV_OFF_BELOW && HW(H_DEV + 0x114) == 2) {
         HW(H_DEV + 0x114) = 0;
-        *off_by_gov = 1;
-    } else if (*off_by_gov && c <= (double)tgt - W_GOV_HYST && HW(H_DEV + 0x114) == 0) {
+        *off_t = now_us();
+    } else if (*off_t && now_us() - *off_t >= W_GOV_HOLD_US && c <= (double)tgt - W_GOV_ON_BELOW && HW(H_DEV + 0x114) == 0) {
         HW(H_DEV + 0x114) = 2;
-        *off_by_gov = 0;
+        *off_t = 0;
     }
 }
 
-static int w_gov_off;                  /* the dynamic wait's heater is off because of the thermostat */
+static uint64_t w_gov_off;             /* us: the dynamic wait's heater was switched off by the thermostat (0 = not) */
+
+/* the heater of a heated wait at its start (it switches on only at or below TARGET - 1.0 C): 1 = the wait is heated. A vat that is warmer
+ * than that does not get the heater at once: the thermostat takes over in the "off for 30 s already" state and switches it on when the vat has cooled
+ * to TARGET - 1.0 C. *off_t = the thermostat's switch-off time (set here). Without a working sensor / target the heater is switched on as before. */
+static int heat_start(uint64_t *off_t)
+{
+    double c;
+    int tgt = HI(H_MACH + 0x198);
+    *off_t = 0;
+    if (h_ok && HW(H_DEV + 0x114) == 0 && tgt >= 20 && tgt <= 60 && sgheat_temp(&c) && c > (double)tgt - W_GOV_ON_BELOW) {
+        *off_t = now_us() - W_GOV_HOLD_US - 1;
+        return 1;
+    }
+    return heater_on();
+}
 
 static void heater_off(double el)
 {
@@ -777,7 +812,7 @@ static void begin_wait(uintptr_t P, uint64_t t0, uint64_t now_ms)
             wc.heat = 1;
     }
     if (wc.heat && wc.max_ms > W_GAP_MS + W_POLL_MS)
-        wc.heating = heater_on();
+        wc.heating = heat_start(&w_gov_off);
     wc.heat = wc.heating;              /* = this wait was heated */
     pthread_mutex_lock(&wlock);
     wstat.active = 1;
@@ -806,9 +841,10 @@ static void step_wait(uintptr_t P, uint64_t now_ms)
         heat_govern(&w_gov_off);
     if (wc.heating && el >= wc.max_ms - W_GAP_MS - W_POLL_MS)  /* slicer wait about to end */
         heater_off(el);
-    if (watch && !wc.settled && el >= wset.win * 1000) {
-        g = settle_grad(wset.win, &mean);
-        if (g >= 0 && g * wset.win < wset.grad && el >= wait_min_for(wc.layer) * 1000) {   /* force change over the window (g) = slope * window */
+    double win_eff = wait_win_for(wc.layer);     /* the set (change + window) of this layer */
+    if (watch && !wc.settled && el >= win_eff * 1000) {
+        g = settle_grad(win_eff, &mean);
+        if (g >= 0 && g * win_eff < wait_grad_for(wc.layer) && el >= wait_min_for(wc.layer) * 1000) {   /* force change over the window (g) = slope * window */
             wc.settled = 1;
             wc.settle_ms = el;
             if (wset.wt) {             /* tare in the wait: new zero at the settled level */
@@ -1163,11 +1199,11 @@ static int sgwait_json(char *buf, size_t len)
     if (!w_ok)
         return snprintf(buf, len, ",\"wait\":null");
     pthread_mutex_lock(&wlock);
-    n = snprintf(buf, len, ",\"wait\":{\"dw\":%d,\"wh\":%d,\"grad\":%.2f,\"win\":%.2f,\"min\":%.2f,\"min2\":%.2f,\"min2n\":%d,"
+    n = snprintf(buf, len, ",\"wait\":{\"dw\":%d,\"wh\":%d,\"grad\":%.2f,\"win\":%.2f,\"min\":%.2f,\"min2\":%.2f,\"min2n\":%d,\"grad2\":%.2f,\"win2\":%.2f,\"ng\":%d,"
                  "\"db\":%d,\"wt\":%d,\"ov\":%d,\"pf\":1,\"heat_ok\":%d,\"botn\":%d,\"botf\":%d,\"active\":%d,\"layer\":%d,\"bottom\":%d,\"fixed\":%d,\"heating\":%d,"
                  "\"el\":%.2f,\"max\":%.2f,\"g\":%.2f,\"prev\":%.2f,\"n\":%d,\"ns\":%d,\"nm\":%d,"
                  "\"nh\":%d,\"saved\":%.1f,\"last\":[",
-                 wset.dw, wset.wh, wset.grad, wset.win, wset.min, wm2.min2, wm2.n, wset.db, wset.wt, wov.on, h_ok, w_bot, w_bot_file, wstat.active,
+                 wset.dw, wset.wh, wset.grad, wset.win, wset.min, wm2.min2, wm2.n, wm2.grad2, wm2.win2, wm2.ng, wset.db, wset.wt, wov.on, h_ok, w_bot, w_bot_file, wstat.active,
                  wstat.layer, wstat.bottom, wstat.fixed, wstat.heating, wstat.el, wstat.max, wstat.grad,
                  w_prev_s, wstat.n, wstat.ns, wstat.nm, wstat.nh, wstat.saved);
     for (int i = 0; i < wstat.nlast && n < (int)len; i++)

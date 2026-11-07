@@ -7,6 +7,12 @@ M=${MOD_DIR:-/customer/mod}
 log() { echo "$(date '+%F %T') $*"; }
 log "hook start: $(cat $M/VERSION)"
 
+# machine settings watcher (restores the saved file if the app reports missing parameters at start; rolling backups)
+if [ -f $M/machwatch.sh ] && [ ! -f $M/machguard_disable ]; then
+    sh $M/machwatch.sh </dev/null >/dev/null 2>&1 &
+    log "machwatch started"
+fi
+
 # bind-mount one of our files over a stock file (gone at reboot, reapplied here)
 bind() {  # src dst
     if [ ! -f "$1" ]; then

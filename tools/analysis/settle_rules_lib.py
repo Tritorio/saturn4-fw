@@ -12,7 +12,7 @@ def waits(path):
         if r[ix['wait_end']] and r[ix['wait_s']]:
             L = r[ix['layer']]
             j = k - 1
-            while j >= 0 and d[j][ix['layer']] == L and d[j][ix['phase']] == 'layer':
+            while j >= 0 and d[j][ix['layer']] == L and d[j][ix['phase']] in ('layer', 'wait'):
                 j -= 1
             seg = d[j + 1:k]
             if len(seg) < 4: continue

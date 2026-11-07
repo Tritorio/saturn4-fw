@@ -3,6 +3,21 @@
 Every release is a git tag (`v1.0`, `v1.1`, ...) and a GitHub Release with the same notes. The newest entry is first.
 When a new revision is published, add its entry here (tools/github/templates/CHANGELOG.md) before re-running the export.
 
+## V1.1.3 (mod 8.47, build 53) - 2026-11-07
+Source revision matching mod 8.47. The firmware image is not published; build it yourself (see `docs/BUILDING.md`). The library did not change since V1.1.2 builds of mod 8.46, so a printer that already runs it only needs the dashboard files; the new boot scripts run at the next power cycle.
+- **Machine settings safety** (after a reset in which the app rewrote its machine settings file with factory defaults):
+  - The boot guard now also restores a missing or empty `machine_param_ref.bin` and `machine_info.bin`, not only an invalid one.
+  - Every changed, valid settings file is kept as a rolling backup (last 12 in `sglog/machine_backups/boot/`, last 3 plus `machine_info.bin` on the boot partition, because the files partition is not mounted yet when the guard runs).
+  - A watcher (`machwatch.sh`, started by `hook.sh`) reads the app log for 150 s after start. If the app reports "can't find machine parameters", it puts the newest backup back, keeps the bad file as `suspect_N.bin`, and writes `sglog/MACHRESET`. A power cycle then loads the restored file. Afterwards it saves a changed file every minute.
+  - Persistent log: `sglog/machguard.log` (`mg/boot.log` on the boot partition before the files partition exists). Kill switch: `/customer/mod/machguard_disable`.
+- **Dynamic wait fix:** the dashboard server rejected the five-value `waitmin2` command that the card sends, so the second set (Force Variation 2 / Timespan 2), the Layer Switch and Min Wait after never reached the printer. Fixed.
+- **Dynamic wait card:** Apply stays faded after pressing it until the printer reports the new values (it used to light up again for about a second).
+- **Dynamic wait, two independent sets:** Force Variation and Timespan 1 and 2 with a Layer Switch between them, and Min Wait before / Transition Layer / Min Wait after with its own layer number; ceiling 15 minutes for "ignore the slicer wait". Wait Times Testing uses the average of two windows as its settle rule and tilts at 36 deg/s.
+- **Charts:** the Manual Exposure chart and the Dynamic wait chart show a cursor with a per-layer tooltip when you hover or drag over them, like the Force card.
+- **Manual Exposure** can be activated without a running job (the times apply from the first layer of the next job).
+- **Pre-heat warning:** above 30 C, also use the Resin Mixing function.
+- **Job log:** phase `wait` rows and the first-layer Z step are logged.
+
 ## V1.1.2 (source update after V1.1.1) - 2026-11-06
 Source-only revision: no new firmware image yet. The library changes load at the next power cycle of a printer that has them installed.
 - **Wait Times Testing (new, Developer card):** a dry-run print simulation (no UV) to measure how long the resin takes to settle after each retract, with no maximum wait. Input: layer height and number of layers. It runs its own sequence from the levelling (calibrate in air, resin probe, auto-levelling with the machine's own settings), then the first wait right after levelling, then per layer: tilt release (the Tilt speed card values), plate rise by one layer height while the tilt returns, wait until settled. Wait & heat follows its dashboard setting. Every run writes its own log (`sglog/waittest/waittest_<height>mm_<date>_<time>.csv`: force, vat temperature, gradient, plate height above the levelled contact, settle time per layer) that can be downloaded and deleted from the card. First results: `docs/wait_test_results_20261106.txt`.

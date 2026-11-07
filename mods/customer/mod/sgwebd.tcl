@@ -7,7 +7,7 @@
 #   GET  /                 -> redirect to the page on :3030
 #   POST /api/cmd          body "tare" | "untare" | "auto 0|1" | "k <counts/g>" |
 #                          "heat P TPRE H TPRINT [Z]" (pre-heat 0|1, C, heating during print 0|1, C, Z 0|1 = move the plate with the pre-heat) |
-#                          "waitmin2 MIN2 N" (second minimum wait, >= 1 s, from layer N to the end; N 0 = off) | "wait DW WH GRAD WIN MIN [DB [WT]]" (dynamic wait 0|1, Wait & heat 0|1,
+#                          "waitmin2 MIN2 N [GRAD2 [WIN2 [NG]]]" (second minimum wait, >= 1 s, from layer N to the end; N 0 = off; second set change / window from layer NG) | "wait DW WH GRAD WIN MIN [DB [WT]]" (dynamic wait 0|1, Wait & heat 0|1,
 #                          g/s 0.2-5, s 0.6-3, s >= 1, dynamic wait on bottom layers 0|1,
 #                          tare in the wait 0|1) | "settings save|restore|defaults" |
 #                          "tilt N A B C D E F S P R T X Y" (N 0-999, speeds 10-144 even, stage
@@ -467,8 +467,9 @@ proc handle {c method path query host body origin} {
                 if {$ui < 5 || $ui > 500 || $up < 5 || $up > 500} { return [err $c 400 "bad command"] }
             } elseif {[regexp {^settings (save|restore) (.+)$} $cmd -> - pn]} {
                 if {![valid_profile $pn]} { return [err $c 400 "bad profile name"] }
-            } elseif {[regexp {^waitmin2 ([0-9]+\.?[0-9]*) ([0-9]{1,5})$} $cmd -> m2 m2n]} {
-                if {$m2 < 1} { return [err $c 400 "bad command"] }
+            } elseif {[regexp {^waitmin2 ([0-9]+\.?[0-9]*) ([0-9]{1,5})( ([0-9]+\.?[0-9]*))?( ([0-9]+\.?[0-9]*))?( ([0-9]{1,5}))?$} $cmd -> m2 m2n - g2 - w2 - ng2]} {
+                # MIN2 N [GRAD2 [WIN2 [NG]]]: the page sends all five since the two-set Dynamic wait; ranges as in libsgtap
+                if {$m2 < 1 || ($g2 ne "" && ($g2 < 0.05 || $g2 > 20)) || ($w2 ne "" && ($w2 < 0.6 || $w2 > 600))} { return [err $c 400 "bad command"] }
             } elseif {[regexp {^wait ([01]) ([01]) ([0-9]+\.?[0-9]*) ([0-9]+\.?[0-9]*) ([0-9]+\.?[0-9]*)( [01])?( [01])?$} $cmd -> dw wh wg ww wm db wt]} {
                 if {![valid_wait $wg $ww $wm]} { return [err $c 400 "bad command"] }
             } elseif {![regexp {^(tare|untare|auto [01]|k (-?[0-9.]+)|heat [01] ([0-9]+) [01] ([0-9]+)( [01])?|settings (save|restore|defaults))$} $cmd -> - k tpre tprint - -] ||

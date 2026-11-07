@@ -25,7 +25,7 @@
  *   rel_v1,rel_v2,sep_deg,sep_kind,ret_v1,ret_v2,dl_peak_g,dl_f (sgtilt.c): on the first row after a release / return: X tilt speeds in deg/s as sent
  *   to the chip (v2 empty = one stage; Dynamic lift: v1 = its start speed, v2 = the fast speed), Dynamic lift's separation angle in deg
  *   and how it ended (sep | nopeel | none), dl_peak_g = the peel peak of that release in g, dl_f = its start speed / the set speed, all empty when not applicable. csv_printf lines are limited to 383 chars.
- *   z_ret_mm,z_step_um (sgzmon.c): on the first row after the start of each exposure: the print height (mm: the app's Z step counter minus the Z zero of the machine settings) after the retract, and the step from the previous layer in um (empty on the first layer).
+ *   z_ret_mm,z_step_um (sgzmon.c): on the first row after the start of each exposure: the print height (mm: the app's Z step counter minus the Z zero of the machine settings) after the retract, and the step from the previous layer in um (the first layer: its height above the Z zero).
  *   expo_file,expo_set,expo_used (sgexpo.c): on the first row after each finished exposure: the print file's exposure time, the value set by the
  *   exposure override (empty = none) and the measured exposure (s).
  *   Line 2 of the CSV = one quoted description per column (sgcolumns.h, same text in the .txt as column_help); data from line 3.
@@ -665,7 +665,7 @@ static void log_line(char *l)
         session_end();
     } else if (strncmp(m, "layer ", 6) == 0 && strchr(m, ':')) {
         s_layer = (int)parse_u(m + 6);
-        set_phase("layer");
+        set_phase("wait");                 /* user: the CSV phase after "layer N:" is the wait after the retract, shown as "wait" (was "layer") */
     } else if (strstr(m, "curr : printer->")) {
         /* the app logs its state every 10 s. After a stop / finish it can take minutes until "main_routine exit"
          * (the print report to the blocked cloud times out), so an app state of IDLE for 20 s ends the session too */
@@ -741,7 +741,9 @@ static void lf_read(void)
     }
 }
 
-static void follow_log(void)
+static pthread_mutex_t lf_lock = PTHREAD_MUTEX_INITIALIZER;   /* the writer thread (every 0.5 s) and sglog_force_follow (wait test thread) both read the app log */
+
+static void follow_log_locked(void)
 {
     char target[160];
     ssize_t n;
@@ -769,6 +771,19 @@ static void follow_log(void)
     lf_read();
 }
 
+static void follow_log(void)
+{
+    pthread_mutex_lock(&lf_lock);
+    follow_log_locked();
+    pthread_mutex_unlock(&lf_lock);
+}
+
+/* read the app log NOW (the idle / trip counters are up to date afterwards); for threads that wait for a log line (wait test) */
+static void sglog_force_follow(void)
+{
+    follow_log();
+}
+
 /* every 0.5 s from the writer thread */
 static void sglog_tick(void)
 {
@@ -782,6 +797,7 @@ static void sglog_atfork_child(void)
 {
     pthread_mutex_t fresh = PTHREAD_MUTEX_INITIALIZER;
     memcpy(&glock, &fresh, sizeof glock);
+    memcpy(&lf_lock, &fresh, sizeof lf_lock);
     gauge_fd = -1;
     glen = 0;
     s_active = s_pending = 0;
