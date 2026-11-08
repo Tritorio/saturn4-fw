@@ -574,6 +574,30 @@ static void sgexpo_csv(char *buf, size_t len)
     pthread_mutex_unlock(&elock);
 }
 
+/* the wait row of the CSV (sglog.c, the row that carries wait_s): the exposure time this layer is going to get, so that the wait, the Z step and the
+ * exposure share one row: expo_file = the file's time, expo_set = the override / profile value (empty = none), expo_used = the value the printer will
+ * use (the set value, else the file's). PLANNED, not measured: the measured time stays on the first row after the exposure (sgexpo_csv). */
+static void sgexpo_plan_csv(char *buf, size_t len)
+{
+    float cf, cs;
+    char set[16] = "";
+    if (!e_ok) {
+        snprintf(buf, len, ",,,");
+        return;
+    }
+    pthread_mutex_lock(&elock);
+    cf = estat.cf;
+    cs = estat.cs;
+    pthread_mutex_unlock(&elock);
+    if (cf < 0) {
+        snprintf(buf, len, ",,,");
+        return;
+    }
+    if (cs >= 0)
+        snprintf(set, sizeof set, "%.3f", cs / 1000.0);
+    snprintf(buf, len, ",%.3f,%s,%.3f", cf / 1000.0, set, (cs >= 0 ? cs : cf) / 1000.0);
+}
+
 static int sgexpo_json(char *buf, size_t len)
 {
     int n;

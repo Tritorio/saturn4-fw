@@ -133,7 +133,7 @@ static double w_prev_s = -1;           /* last wait (settle time if settled), s 
 static pthread_mutex_t wlock = PTHREAD_MUTEX_INITIALIZER;
 static struct {
     int active, layer, bottom, fixed, heating;
-    double el, max, grad;              /* s, s, g/s (grad < 0 = not known yet) */
+    double el, max, grad, diff;        /* s, s, g/s (grad < 0 = not known yet), diff = |mean of the last window - mean of the window before| in g (< 0 = not known yet) */
     int n, ns, nm, nh;                 /* layers, settled, reached max, heated (this job) */
     double saved;                      /* s */
     struct { int layer; float used; int end, heated; } last[W_LAST];
@@ -691,19 +691,33 @@ static int heater_on(void)
 #define W_GOV_OFF_BELOW 0.5          /* off at target - this */
 #define W_GOV_ON_BELOW  1.0          /* on again at target - this or lower ... */
 #define W_GOV_HOLD_US   30000000ull  /* ... but not before this long after the switch-off */
+/* PRE-HEAT during a heated wait (wait test with the dashboard Pre-heat on: the app's own pre-heat thermostat (mode 3, its target = pre-heat
+ * target live +0x1a0, band +/- I7 R / T) kept cycling the heater through the waits, the vat rose to 42.2 C with a 40 C target and the gauge drifted 1-2 g per
+ * 30 s, so the settle rule never passed). A wait that starts while the heater mode is 3 is governed like a pulse wait: gov_mode = 3, the same thermostat
+ * (off at the pre-heat target - 0.5, 30 s hold, back to mode 3 at - 1.0, where the app's own thermostat takes over again), and at the end of the wait
+ * heat_release puts mode 3 back. gov_mode is 2 for the print's pulse. */
+static int gov_mode = 2;
 static void heat_govern(uint64_t *off_t)
 {
     double c;
-    int tgt = HI(H_MACH + 0x198);
+    int tgt = HI(H_MACH + (gov_mode == 3 ? 0x1a0 : 0x198));
     if (!h_ok || tgt < 20 || tgt > 60 || !sgheat_temp(&c))
         return;
-    if (!*off_t && c >= (double)tgt - W_GOV_OFF_BELOW && HW(H_DEV + 0x114) == 2) {
+    if (!*off_t && c >= (double)tgt - W_GOV_OFF_BELOW && (int)HW(H_DEV + 0x114) == gov_mode) {
         HW(H_DEV + 0x114) = 0;
         *off_t = now_us();
     } else if (*off_t && now_us() - *off_t >= W_GOV_HOLD_US && c <= (double)tgt - W_GOV_ON_BELOW && HW(H_DEV + 0x114) == 0) {
-        HW(H_DEV + 0x114) = 2;
+        HW(H_DEV + 0x114) = (unsigned)gov_mode;
         *off_t = 0;
     }
+}
+
+/* the end of a governed wait: the pre-heat the thermostat switched off goes back on (the app's own pre-heat control continues); the print pulse just ends */
+static void heat_release(void)
+{
+    if (gov_mode == 3 && h_ok && HW(H_DEV + 0x114) == 0 && HB(H_UI + 0x15))
+        HW(H_DEV + 0x114) = 3;
+    gov_mode = 2;
 }
 
 static uint64_t w_gov_off;             /* us: the dynamic wait's heater was switched off by the thermostat (0 = not) */
@@ -716,6 +730,11 @@ static int heat_start(uint64_t *off_t)
     double c;
     int tgt = HI(H_MACH + 0x198);
     *off_t = 0;
+    gov_mode = 2;
+    if (h_ok && HW(H_DEV + 0x114) == 3 && HB(H_UI + 0x15)) {      /* the app's pre-heat is on: the thermostat takes it over for this wait */
+        gov_mode = 3;
+        return 1;
+    }
     if (h_ok && HW(H_DEV + 0x114) == 0 && tgt >= 20 && tgt <= 60 && sgheat_temp(&c) && c > (double)tgt - W_GOV_ON_BELOW) {
         *off_t = now_us() - W_GOV_HOLD_US - 1;
         return 1;
@@ -726,6 +745,7 @@ static int heat_start(uint64_t *off_t)
 static void heater_off(double el)
 {
     w_gov_off = 0;
+    heat_release();
     if (!wc.heating)
         return;
     if (HW(H_DEV + 0x114) == 2)
@@ -760,6 +780,30 @@ static double settle_grad(double win, double *mean_raw)
     *mean_raw = sr / n;
     g = (n * stv - st * sv) / (n * stt - st * st);
     return g < 0 ? -g : g;
+}
+
+/* the MEASURED difference in g between the mean of the last win s and the mean of the win s before (the number the wait test logs as diff_g); -1 = the two windows
+ * do not fit into the wait yet or hold too few readings. Display only: the rule above still uses the slope of the last window. */
+static double settle_diff(double win)
+{
+    uint64_t now = now_us(), b1 = now - (uint64_t)(win * 1e6), b0 = now - (uint64_t)(2 * win * 1e6);
+    double s1 = 0, s0 = 0, k = w_k < 0 ? -w_k : w_k, d;
+    int n1 = 0, n0 = 0, need = (int)(3.0 * win);
+    if (b0 < wc.us0 || k <= 0)
+        return -1;
+    pthread_mutex_lock(&glock);
+    for (unsigned i = 0; i < HIST && i < hpos; i++) {
+        unsigned j = (hpos - 1 - i) % HIST;
+        if (hist[j].ts < b0)
+            break;
+        if (hist[j].ts >= b1) { s1 += hist[j].raw; n1++; }
+        else { s0 += hist[j].raw; n0++; }
+    }
+    pthread_mutex_unlock(&glock);
+    if (n1 < (need > 3 ? need : 3) || n0 < (need > 3 ? need : 3))
+        return -1;
+    d = (s1 / n1 - s0 / n0) / k;
+    return d < 0 ? -d : d;
 }
 
 static void begin_wait(uintptr_t P, uint64_t t0, uint64_t now_ms)
@@ -823,6 +867,7 @@ static void begin_wait(uintptr_t P, uint64_t t0, uint64_t now_ms)
     wstat.el = 0;
     wstat.max = (wov.on && wc.slicer_ms > 0 ? wc.slicer_ms : wc.max_ms) / 1000;   /* the chart scale: the slicer's wait */
     wstat.grad = -1;
+    wstat.diff = -1;
     pthread_mutex_unlock(&wlock);
 }
 
@@ -842,6 +887,12 @@ static void step_wait(uintptr_t P, uint64_t now_ms)
     if (wc.heating && el >= wc.max_ms - W_GAP_MS - W_POLL_MS)  /* slicer wait about to end */
         heater_off(el);
     double win_eff = wait_win_for(wc.layer);     /* the set (change + window) of this layer */
+    if (watch && !wc.settled) {
+        double dm = settle_diff(win_eff);
+        pthread_mutex_lock(&wlock);
+        wstat.diff = dm;
+        pthread_mutex_unlock(&wlock);
+    }
     if (watch && !wc.settled && el >= win_eff * 1000) {
         g = settle_grad(win_eff, &mean);
         if (g >= 0 && g * win_eff < wait_grad_for(wc.layer) && el >= wait_min_for(wc.layer) * 1000) {   /* force change over the window (g) = slope * window */
@@ -1201,10 +1252,10 @@ static int sgwait_json(char *buf, size_t len)
     pthread_mutex_lock(&wlock);
     n = snprintf(buf, len, ",\"wait\":{\"dw\":%d,\"wh\":%d,\"grad\":%.2f,\"win\":%.2f,\"min\":%.2f,\"min2\":%.2f,\"min2n\":%d,\"grad2\":%.2f,\"win2\":%.2f,\"ng\":%d,"
                  "\"db\":%d,\"wt\":%d,\"ov\":%d,\"pf\":1,\"heat_ok\":%d,\"botn\":%d,\"botf\":%d,\"active\":%d,\"layer\":%d,\"bottom\":%d,\"fixed\":%d,\"heating\":%d,"
-                 "\"el\":%.2f,\"max\":%.2f,\"g\":%.2f,\"prev\":%.2f,\"n\":%d,\"ns\":%d,\"nm\":%d,"
+                 "\"el\":%.2f,\"max\":%.2f,\"g\":%.2f,\"d\":%.2f,\"prev\":%.2f,\"n\":%d,\"ns\":%d,\"nm\":%d,"
                  "\"nh\":%d,\"saved\":%.1f,\"last\":[",
                  wset.dw, wset.wh, wset.grad, wset.win, wset.min, wm2.min2, wm2.n, wm2.grad2, wm2.win2, wm2.ng, wset.db, wset.wt, wov.on, h_ok, w_bot, w_bot_file, wstat.active,
-                 wstat.layer, wstat.bottom, wstat.fixed, wstat.heating, wstat.el, wstat.max, wstat.grad,
+                 wstat.layer, wstat.bottom, wstat.fixed, wstat.heating, wstat.el, wstat.max, wstat.grad, wstat.diff,
                  w_prev_s, wstat.n, wstat.ns, wstat.nm, wstat.nh, wstat.saved);
     for (int i = 0; i < wstat.nlast && n < (int)len; i++)
         n += snprintf(buf + n, len - (size_t)n, "[%d,%.2f,%d,%d]%s", wstat.last[i].layer,

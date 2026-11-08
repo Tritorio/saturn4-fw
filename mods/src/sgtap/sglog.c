@@ -10,7 +10,7 @@
  *   tick [..][..][..][TICK] is CLOCK_MONOTONIC in ms.
  * - Per session: <csvdir>/<YYYYmmdd_HHMMSS>_<printfile>.csv (+ .txt with metadata),
  *   one row every 0.5 s:
- *     time_utc,t_s,layer,phase,raw_last,value,value_min,value_max,n,raw_min,raw_max,g,g_min,g_max,
+ *     time_utc,t_s,layer,phase,g,g_min,g_max,
  *     tank_c,wait_s,wait_end,heat_w,cpu,rel_v1,rel_v2,sep_deg,sep_kind,ret_v1,ret_v2,dl_peak_g,dl_f,expo_file,expo_set,expo_used,z_ret_mm,z_step_um
  *   value = raw/100 - zero (chitu's own units, same as its thresholds), zero = median
  *   of raw/100 over the 2 s before the session start. n = readings in the window.
@@ -27,7 +27,8 @@
  *   and how it ended (sep | nopeel | none), dl_peak_g = the peel peak of that release in g, dl_f = its start speed / the set speed, all empty when not applicable. csv_printf lines are limited to 383 chars.
  *   z_ret_mm,z_step_um (sgzmon.c): on the first row after the start of each exposure: the print height (mm: the app's Z step counter minus the Z zero of the machine settings) after the retract, and the step from the previous layer in um (the first layer: its height above the Z zero).
  *   expo_file,expo_set,expo_used (sgexpo.c): on the first row after each finished exposure: the print file's exposure time, the value set by the
- *   exposure override (empty = none) and the measured exposure (s).
+ *   exposure override (empty = none) and the measured exposure (s). The wait row (the row with wait_s) carries the same three columns with the PLANNED
+ *   values of its layer (file, set, used = set else file), next to z_ret_mm / z_step_um; the measured value follows on the first row after the exposure.
  *   Line 2 of the CSV = one quoted description per column (sgcolumns.h, same text in the .txt as column_help); data from line 3.
  * - <csvdir>/DISABLE stops new sessions. Oldest files deleted above 200 MB in total.
  * Env (tests): SGTAP_GAUGE (tty path prefix), SGTAP_LOG, SGTAP_CSVDIR.
@@ -53,8 +54,10 @@ static void sgheat_tick(void);
 static void sgwait_csv(char *buf, size_t len);
 static void sgtilt_csv(char *buf, size_t len);
 static void sgexpo_csv(char *buf, size_t len);
+static void sgexpo_plan_csv(char *buf, size_t len);
 static void sgzmon_csv(char *buf, size_t len);
 static int sgsys_cpu(double *cpu);
+static int sgheat_out(void);
 
 static char sg_gauge[64] = "/dev/ttyS1";
 static char sg_logpath[128] = "/media/mmcblk0p2/log";
@@ -341,6 +344,8 @@ static int cmp_i32(const void *a, const void *b)
     return (x > y) - (x < y);
 }
 
+static uint64_t s_wait0_us;     /* start of the first wait of the session (phase wait), 0 = not yet */
+
 static void session_start(uint64_t start_us)
 {
     int32_t v[64];                                /* the readings of 2 s (~10); not HIST: it is 4096 now */
@@ -349,6 +354,7 @@ static void session_start(uint64_t start_us)
     s_idle_tick = 0;
     s_pending = 1;
     s_start_us = start_us;
+    s_wait0_us = 0;                               /* t_wait_hms counts from the first wait of the session */
     s_layer = -1;
     snprintf(s_phase, sizeof s_phase, "start");
     /* zero = median of raw/100 over the 2 s before the start line */
@@ -458,8 +464,8 @@ static void csv_open(void)
     csv_printf("print_file=%s\nstart_mono_s=%.3f\nzero=%d\n", file, s_start_us / 1e6, (int)s_zero);
     csv_printf("units=value = raw/100 - zero (chitu sg units, e.g. probe ths 55, level 4000)\n");
     csv_printf("k=%.2f\ngrams=g = (raw - ref) / k, ref = zero*100 until calibrate ends\n", s_k);
-    csv_printf("columns=time_utc,t_s,layer,phase,raw_last,value,value_min,value_max,n,"
-               "raw_min,raw_max,g,g_min,g_max,tank_c,wait_s,wait_end,heat_w,cpu,rel_v1,rel_v2,sep_deg,sep_kind,ret_v1,ret_v2,dl_peak_g,dl_f,expo_file,expo_set,expo_used,z_ret_mm,z_step_um\n");
+    csv_printf("columns=time_utc,t_s,layer,phase,"
+               "g,g_min,g_max,tank_c,wait_s,wait_end,heat_w,cpu,rel_v1,rel_v2,sep_deg,sep_kind,ret_v1,ret_v2,dl_peak_g,dl_f,expo_file,expo_set,expo_used,z_ret_mm,z_step_um,t_wait_hms,heat_on\n");
     csv_printf("column_help:\n");
     for (unsigned i = 0; i < sizeof csv_cols / sizeof csv_cols[0]; i++)
         csv_printf("  %-10s = %s\n", csv_cols[i][0], csv_cols[i][1]);
@@ -468,8 +474,8 @@ static void csv_open(void)
     snprintf(name, sizeof name, "%s/%s_%s.csv", sg_csvdir, ts, base);
     csv_fd = real_open(name, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
     csv_bytes = 0;
-    csv_printf("time_utc,t_s,layer,phase,raw_last,value,value_min,value_max,n,"
-               "raw_min,raw_max,g,g_min,g_max,tank_c,wait_s,wait_end,heat_w,cpu,rel_v1,rel_v2,sep_deg,sep_kind,ret_v1,ret_v2,dl_peak_g,dl_f,expo_file,expo_set,expo_used,z_ret_mm,z_step_um\n");
+    csv_printf("time_utc,t_s,layer,phase,"
+               "g,g_min,g_max,tank_c,wait_s,wait_end,heat_w,cpu,rel_v1,rel_v2,sep_deg,sep_kind,ret_v1,ret_v2,dl_peak_g,dl_f,expo_file,expo_set,expo_used,z_ret_mm,z_step_um,t_wait_hms,heat_on\n");
     /* line 2: one quoted description per column; data starts on line 3 */
     for (unsigned i = 0; i < sizeof csv_cols / sizeof csv_cols[0]; i++)
         csv_printf("%s\"%s\"", i ? "," : "", csv_cols[i][1]);
@@ -508,7 +514,7 @@ static void csv_row(void)
 {
     int32_t last, mn, mx;
     int n, have;
-    char ts[32], layer[12], tank[16] = "", wait[40], cpu[12] = "", tilt[96], expo[48], zmon[40];
+    char ts[32], layer[12], tank[16] = "", wait[40], cpu[12] = "", tilt[96], expo[48], zmon[40], thms[16] = ",";
     double cp;
     double tc;
     struct timespec rt;
@@ -547,18 +553,24 @@ static void csv_row(void)
     sgwait_csv(wait, sizeof wait);
     sgtilt_csv(tilt, sizeof tilt);
     sgexpo_csv(expo, sizeof expo);
+    if (strcmp(wait, ",,,") != 0 && strcmp(expo, ",,,") == 0)       /* the wait row also carries the planned exposure of its layer (z_ret_mm / z_step_um are on it already) */
+        sgexpo_plan_csv(expo, sizeof expo);
     sgzmon_csv(zmon, sizeof zmon);
+    if (!s_wait0_us && strcmp(s_phase, "wait") == 0)
+        s_wait0_us = now;
+    if (s_wait0_us) {
+        unsigned long ws = (unsigned long)((now - s_wait0_us) / 1000000u);
+        snprintf(thms, sizeof thms, ",%02lu:%02lu:%02lu", ws / 3600, ws / 60 % 60, ws % 60);
+    }
     if (sgsys_cpu(&cp))
         snprintf(cpu, sizeof cpu, "%.1f", cp);
     if (have)
-        csv_printf("%s.%03ld,%.3f,%s,%s,%d,%d,%d,%d,%d,%d,%d,%.1f,%.1f,%.1f,%s%s,%s%s%s%s\n", ts,
-                   rt.tv_nsec / 1000000, (now - s_start_us) / 1e6, layer, s_phase, (int)last,
-                   (int)(last / 100 - s_zero), (int)(mn / 100 - s_zero),
-                   (int)(mx / 100 - s_zero), n, (int)mn, (int)mx,
-                   (last - s_ref) / s_k, (mn - s_ref) / s_k, (mx - s_ref) / s_k, tank, wait, cpu, tilt, expo, zmon);
+        csv_printf("%s.%03ld,%.3f,%s,%s,%.1f,%.1f,%.1f,%s%s,%s%s%s%s%s,%d\n", ts,
+                   rt.tv_nsec / 1000000, (now - s_start_us) / 1e6, layer, s_phase,
+                   (last - s_ref) / s_k, (mn - s_ref) / s_k, (mx - s_ref) / s_k, tank, wait, cpu, tilt, expo, zmon, thms, sgheat_out());
     else
-        csv_printf("%s.%03ld,%.3f,%s,%s,,,,,0,,,,,,%s%s,%s%s%s%s\n", ts, rt.tv_nsec / 1000000,
-                   (now - s_start_us) / 1e6, layer, s_phase, tank, wait, cpu, tilt, expo, zmon);
+        csv_printf("%s.%03ld,%.3f,%s,%s,,,,%s%s,%s%s%s%s%s,%d\n", ts, rt.tv_nsec / 1000000,
+                   (now - s_start_us) / 1e6, layer, s_phase, tank, wait, cpu, tilt, expo, zmon, thms, sgheat_out());
 }
 
 /* ---- app log follower (writer thread only) ---- */

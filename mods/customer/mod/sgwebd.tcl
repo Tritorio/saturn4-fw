@@ -452,7 +452,7 @@ proc handle {c method path query host body origin} {
             } elseif {[regexp {^mx set ([0-9]{1,5}(\.[0-9]{1,3})?) ([0-9]{1,5}(\.[0-9]{1,3})?) ([0-9]{1,5}(\.[0-9]{1,3})?) ([0-9]{1,5}(\.[0-9]{1,3})?) [01] [01]$} $cmd]} {
                 foreach mxt [lrange [split $cmd " "] 2 5] { if {$mxt < 0.1} { return [err $c 400 "bad command"] } }
             } elseif {[regexp {^tiltmode [01]$} $cmd]} {
-            } elseif {[regexp {^wtest (stop|start 0\.[0-9]{1,3} [1-9][0-9]{0,2})$} $cmd]} {
+            } elseif {[regexp {^wtest (stop|start [0-9]{1,2}(\.[0-9]{1,3})? [1-9][0-9]{0,2})$} $cmd]} {
             } elseif {[regexp {^xmove ([0-9]{1,3})(\.[0-9])?$} $cmd -> xi xd]} {
                 if {$xi > 140 || ($xi == 140 && $xd ne "" && $xd ne ".0")} { return [err $c 400 "bad command"] }
             } elseif {[regexp {^dynlift ([01]) ([0-9]{3,5}) ([0-9]{2,5}) ([0-9]{1,2}) ([0-9]{1,3})( ([0-9]{1,6}))?$} $cmd -> dlo dll dlw dls dlf dlx dlst]} {
@@ -474,7 +474,7 @@ proc handle {c method path query host body origin} {
                 if {![valid_wait $wg $ww $wm]} { return [err $c 400 "bad command"] }
             } elseif {![regexp {^(tare|untare|auto [01]|k (-?[0-9.]+)|heat [01] ([0-9]+) [01] ([0-9]+)( [01])?|settings (save|restore|defaults))$} $cmd -> - k tpre tprint - -] ||
                 ($k ne "" && ![valid_k $k]) ||
-                ($tpre ne "" && (![valid_t $tpre 40] || ![valid_t $tprint 50]))} {
+                ($tpre ne "" && (![valid_t $tpre 50] || ![valid_t $tprint 50]))} {
                 return [err $c 400 "bad command"]
             }
             reply $c 200 "{\"ok\":true,\"id\":\"[send_cmd $cmd]\"}"

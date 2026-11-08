@@ -33,7 +33,7 @@
 #define H_SAVEMACH 0x686f4u    /* int save_machine_params(void), app mutex inside */
 #define H_SAVEUI   0x68728u    /* int save_ui_params(void), app mutex inside */
 #define H_TMIN     20
-#define H_TPREMAX  40         /* pre-heat: the resin is not stirred (page warns above 30) */
+#define H_TPREMAX  50         /* pre-heat (raised from 40 to the print limit: pre-heat 1-2 C above the print target); the page warns above 30 */
 #define H_TPRTMAX  50
 
 #define HW(a)  (*(volatile uint32_t *)(uintptr_t)(a))
@@ -315,6 +315,12 @@ static void sgheat_tick(void)
 }
 
 /* vat temperature for the CSV: 1 = valid */
+/* 1 = the tank heater output is on right now (the app's "heat_control on" / "off" lines and a heater mode other than 0): the datalog columns heat_on */
+static int sgheat_out(void)
+{
+    return h_ok && lg_heat_on && HW(H_DEV + 0x114) != 0;
+}
+
 static int sgheat_temp(double *c)
 {
     float t;

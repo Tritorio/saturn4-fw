@@ -235,6 +235,11 @@
   .wgrid .hbox { display: flex; flex-direction: column; }
   .wgrid .hbox .step { margin-top: auto; }
   #dwcard, #gscard { container-type: inline-size; }
+  /* Dynamic wait is on but not applied to the bottom layers: the card turns yellow with a note */
+  #dwcard.nobot, #dwbox.nobot { background: var(--warnfill); color: #1a1205; }
+  #dwcard.nobot .label, #dwcard.nobot .sub, #dwcard.nobot .status, #dwcard.nobot .phase, #dwcard.nobot .wrow, #dwcard.nobot .wlegend,
+  #dwbox.nobot .wrow, #dwbox.nobot b { color: #1a1205; }
+  .nobotmsg { margin-top: 4px; font-weight: 700; color: #1a1205; }
   @container (max-width: 470px) { .wgrid:not(.dl2) { grid-template-columns: minmax(0, 1fr); } }
   .wgrid .step { gap: 2px; }
   .wgrid .sb { width: 34px; height: 36px; font-size: 18px; }
@@ -975,7 +980,7 @@
         <label class="label" for="htpre">Pre-heat temperature</label>
         <div class="step">
           <button class="sb" data-t="htpre" data-d="-1" aria-label="Lower pre-heat temperature">−</button>
-          <span class="sv"><input id="htpre" type="number" min="20" max="40" step="1" inputmode="numeric">°C</span>
+          <span class="sv"><input id="htpre" type="number" min="20" max="50" step="1" inputmode="numeric">°C</span>
           <button class="sb" data-t="htpre" data-d="1" aria-label="Raise pre-heat temperature">+</button>
         </div>
       </div>
@@ -1075,6 +1080,7 @@
     </div>
     <div class="wbox" id="dwbox" hidden>
       <div class="wrow"><span><span class="wtag">DYNAMIC WAIT</span><b id="dwnow">–</b></span><span id="dwmax"></span></div>
+      <div class="wrow nobotmsg" id="dwboxnb" hidden>Not enabled for Bottom Layers</div>
       <div class="prog"><div id="dwbar"></div></div>
       <div class="wrow"><span id="dwgrad"></span><span id="dwsaved"></span></div>
     </div>
@@ -1096,6 +1102,7 @@
         <div class="label">Dynamic wait after retract</div>
         <div class="status" id="dwstate">–</div>
         <div class="phase" id="dwsub"></div>
+        <div class="nobotmsg" id="dwnobot" hidden>Not enabled for Bottom Layers</div>
       </div>
       <span class="hbtns"><button class="qbtn" data-q="dwcard" aria-expanded="false" aria-label="Show or hide the explanations" title="Explanations">?</button><button class="x" id="dwclose" aria-label="Close dynamic wait set-up">×</button></span>
     </div>
@@ -1339,10 +1346,10 @@
         <label class="label" for="wth">Layer height</label>
         <div class="step">
           <button class="sb" id="wthm" aria-label="Lower the layer height">−</button>
-          <span class="sv"><input id="wth" type="number" min="0.01" max="0.2" step="0.001" inputmode="decimal" value="0.050">mm</span>
+          <span class="sv"><input id="wth" type="number" min="0.01" step="0.001" inputmode="decimal" value="0.050">mm</span>
           <button class="sb" id="wthp" aria-label="Raise the layer height">+</button>
         </div>
-        <div class="seg" id="wtpre" role="group" aria-label="Layer height presets"><button data-h="0.025">0.025</button><button data-h="0.05">0.050</button><button data-h="0.1">0.100</button><button data-h="0.2">0.200</button></div>
+        <div class="seg" id="wtpre" role="group" aria-label="Layer height presets"><button data-h="0.025">0.025</button><button data-h="0.05">0.050</button><button data-h="0.1">0.100</button><button data-h="0.2">0.200</button><button data-h="0.5">0.500</button><button data-h="1">1.000</button><button data-h="2">2.000</button></div>
       </div>
       <div class="hbox">
         <label class="label" for="wtn">Layers</label>
@@ -2273,7 +2280,7 @@ $("auto").addEventListener("change", async e => {
 
 // ---------- resin heating (sgheat.c in libsgtap, via "heat P TPRE H TPRINT") ----------
 // The card edits a draft taken from live.json when it opens; Apply sends it all at once and
-// closes the card, × drops it. Range per field = the input's max (pre-heat 40 C, print 50 C),
+// closes the card, × drops it. Range per field = the input's max (pre-heat 50 C, print 50 C),
 // same as sgwebd.tcl and sgheat.c. Pre-heat above 30 C is allowed but warned about (no stirring).
 const HT = {open: false, busy: false};
 const HMIN = 20, PRE_WARN = 30;
@@ -2487,13 +2494,14 @@ function waitRender() {
   if (!W) { $("dwbox").hidden = true; if (DW.open) waitOpen(false); return; }
   // Force card: the wait in progress
   $("dwbox").hidden = !W.dw;
+  { const nb = !!W.dw && !W.db; $("dwbox").classList.toggle("nobot", nb); $("dwcard").classList.toggle("nobot", nb); $("dwnobot").hidden = !nb; $("dwboxnb").hidden = !nb; }
   if (W.dw) {
     const printing = H ? H.printing : L && L.job.active;
     $("dwnow").textContent = W.active ? (W.fixed ? `Layer ${W.layer}: ${W.bottom ? "bottom layer, " : ""}slicer wait · ${W.el.toFixed(1)} s` :
       `Layer ${W.layer}: settling… ${W.el.toFixed(1)} s`) : printing ? "On · between waits" : "On · waiting for a print";
     $("dwmax").textContent = W.active ? `max ${W.max.toFixed(0)} s` : "";
     $("dwbar").style.width = W.active && W.max > 0 ? Math.min(100, W.el / W.max * 100) + "%" : "0%";
-    $("dwgrad").innerHTML = W.active && !W.fixed ? `Force changed <b>${W.g >= 0 ? (W.g * effWin(W, W.layer)).toFixed(2) + " g" : "–"}</b> in the last ${effWin(W, W.layer).toFixed(1)} s · needs &lt; ${effGrad(W, W.layer).toFixed(2)} g` :
+    $("dwgrad").innerHTML = W.active && !W.fixed ? `Force changed <b>${W.g >= 0 ? (W.g * effWin(W, W.layer)).toFixed(2) + " g" : "–"}</b> in the last ${effWin(W, W.layer).toFixed(1)} s · needs &lt; ${effGrad(W, W.layer).toFixed(2)} g · measured difference <b>${W.d >= 0 ? W.d.toFixed(2) + " g" : "–"}</b> (last ${effWin(W, W.layer).toFixed(1)} s vs the ${effWin(W, W.layer).toFixed(1)} s before)` :
       `Settled: &lt; ${effGrad(W, 0).toFixed(2)} g over ${effWin(W, 0).toFixed(1)} s · min ${(W.min2 !== undefined && !W.min2n ? W.min2 : W.min).toFixed(1)} s` + (W.ng > 0 && (Math.abs(W.grad2 - W.grad) > 0.004 || Math.abs(W.win2 - W.win) > 0.049) ? ` (set 2 after layer ${W.ng}: &lt; ${W.grad2.toFixed(2)} g over ${W.win2.toFixed(1)} s)` : "") + (W.min2n > 0 && Math.abs(W.min2 - W.min) > 0.049 ? ` (Min Wait after layer ${W.min2n}: ${W.min2.toFixed(1)} s)` : "");
     $("dwsaved").innerHTML = W.n ? `Saved this job <b class="ok-txt">${fmtS(W.saved)}</b>` : "";
   }
@@ -3257,7 +3265,7 @@ $("xmclose").addEventListener("click", () => xmOpen(false));
 const WT = {open: false, busy: false, logs: [], sel: new Set(), logT: 0, st: -1, init: false, dir: SGLOG + "waittest/"};
 const WTPH = {prep: "Preparing", calibrate: "Calibrating (zero in air)", probe: "Probing for the resin", level: "Levelling", release: "Release", "return": "Return",
               wait: "Waiting for the resin", end: "Finishing", abort: "Stopping"};
-const wtH = () => Math.round(Math.max(0.01, Math.min(0.2, +$("wth").value || 0.05)) * 1000) / 1000;
+const wtH = () => Math.round(Math.max(0.01, +$("wth").value || 0.05) * 1000) / 1000;
 const wtN = () => Math.max(1, Math.min(999, Math.floor(+$("wtn").value) || 20));
 function wtOpen(open) {
   if (open && !(L && L.wt)) return toast("Wait Times Testing is not available (an older library)", true);
@@ -3341,8 +3349,8 @@ function wtRender() {
 function wtSave() { try { localStorage.sgwth = $("wth").value; localStorage.sgwtn = $("wtn").value; } catch (e) {} }
 $("wtopen").addEventListener("click", () => wtOpen(!WT.open));
 $("wtclose").addEventListener("click", () => wtOpen(false));
-$("wthm").addEventListener("click", () => { $("wth").value = (Math.max(0.01, wtH() - 0.005)).toFixed(3); wtSave(); wtRender(); });
-$("wthp").addEventListener("click", () => { $("wth").value = (Math.min(0.2, wtH() + 0.005)).toFixed(3); wtSave(); wtRender(); });
+$("wthm").addEventListener("click", () => { $("wth").value = (Math.max(0.01, wtH() - (wtH() > 0.2 ? 0.1 : 0.005))).toFixed(3); wtSave(); wtRender(); });
+$("wthp").addEventListener("click", () => { $("wth").value = (wtH() + (wtH() >= 0.2 ? 0.1 : 0.005)).toFixed(3); wtSave(); wtRender(); });
 $("wth").addEventListener("change", () => { $("wth").value = wtH().toFixed(3); wtSave(); wtRender(); });
 $("wtnm").addEventListener("click", () => { $("wtn").value = Math.max(1, wtN() - 1); wtSave(); });
 $("wtnp").addEventListener("click", () => { $("wtn").value = Math.min(999, wtN() + 1); wtSave(); });

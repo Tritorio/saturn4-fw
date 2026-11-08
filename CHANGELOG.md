@@ -3,6 +3,18 @@
 Every release is a git tag (`v1.0`, `v1.1`, ...) and a GitHub Release with the same notes. The newest entry is first.
 When a new revision is published, add its entry here (tools/github/templates/CHANGELOG.md) before re-running the export.
 
+## V1.1.4 (mod 8.48, build 54) - 2026-11-08
+Source revision matching mod 8.48. The firmware image is not published; build it yourself (see `docs/BUILDING.md`). The library changed (loads at the next power cycle); the dashboard files are live files.
+- **Wait Times Testing:**
+  - The log starts at the first level, with new columns `t_wait_hms` (time from the first wait) and `heat_on`; the gradient columns are renamed `diff_g` / `diff_end_g` (g between the last two window averages).
+  - The foreign matter guard is active only on the first layer; if it passes, the other layers ignore it.
+  - Any layer height from 0.01 mm up (no upper limit), presets 0.5 / 1 / 2 mm.
+  - Late "axis is idle" lines from the app log (it is block-buffered, up to 20 s late) no longer abort a run: moves finish by time and late lines are counted (`note-idle-late` rows).
+  - Short settle windows need fewer readings.
+- **Heating:** the pre-heat limit is 50 C; the heater thermostat (off at target - 0.5 C, on at target - 1.0 C) now also holds pre-heat (heater mode 3), which avoided overshoot and pre-heat cycling.
+- **Job log CSV:** the columns raw, value, value_min, value_max, n and raw min / max are removed; new columns `t_wait_hms` and `heat_on`.
+- **Dynamic wait:** the card shows the live measured g difference (last window against the one before); the Dynamic wait card and the Status box turn yellow with "Not enabled for Bottom Layers" when the function is on but "Also on bottom layers" is off.
+
 ## V1.1.3 (mod 8.47, build 53) - 2026-11-07
 Source revision matching mod 8.47. The firmware image is not published; build it yourself (see `docs/BUILDING.md`). The library did not change since V1.1.2 builds of mod 8.46, so a printer that already runs it only needs the dashboard files; the new boot scripts run at the next power cycle.
 - **Machine settings safety** (after a reset in which the app rewrote its machine settings file with factory defaults):
