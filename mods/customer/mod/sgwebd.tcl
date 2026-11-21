@@ -441,6 +441,13 @@ proc handle {c method path query host body origin} {
                 if {$ld > 100 || $ls < 1 || $ls > 30} { return [err $c 400 "bad command"] }
             } elseif {[regexp {^lcdswap ([a-z0-9_-]{1,32}) [01]$} $cmd]} {
             } elseif {[regexp {^mix ([0-9]{1,4})$} $cmd]} {
+            } elseif {[regexp {^zjog [UD] ([1-9][0-9]{1,5})$} $cmd -> zu]} {
+                if {$zu > 100000} { return [err $c 400 "bad command"] }
+            } elseif {$cmd eq "zhome" || $cmd eq "zstop" || $cmd eq "mixz default"} {
+            } elseif {[regexp {^zlim ([1-9][0-9]{2,4})$} $cmd -> zl]} {
+                if {$zl > 10000} { return [err $c 400 "bad command"] }
+            } elseif {[regexp {^mixz ([1-9][0-9]{0,2})(\.[0-9])? ([1-9][0-9]{0,2})(\.[0-9])?$} $cmd]} {
+            } elseif {[regexp {^(light|stock) [01]$} $cmd]} {
             } elseif {$cmd eq "resin off" || ([regexp {^resin (.+)$} $cmd -> rpn] && [valid_profile $rpn])} {
             } elseif {$cmd eq "tl on" || $cmd eq "tl off"} {
             } elseif {[regexp {^waitov [01]$} $cmd]} {

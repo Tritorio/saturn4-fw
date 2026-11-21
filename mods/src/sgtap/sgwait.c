@@ -830,7 +830,7 @@ static void begin_wait(uintptr_t P, uint64_t t0, uint64_t now_ms)
     wc.us0 = now_us() - (now_ms > t0 ? (now_ms - t0) * 1000u : 0);
     wc.layer = layer;
     wc.bottom = wc.layer < w_bot;
-    int off = 0;
+    int off = sg_stock;                /* Stock Mode: hands off every wait (no dynamic wait, no override, no wait & heat, no tare in the wait) */
     wc.orig = HF(P + W_WAIT);
     wc.extra = HF(P + W_EXTRA);
     wc.max_ms = (double)wc.orig + wc.extra;
@@ -1093,6 +1093,7 @@ static void sgtl_cmd(const char *c, char *res, size_t len)
 }
 
 static void sgwtest_poll(void);
+static void sgjog_poll(void);
 
 static void *wait_thread(void *arg)
 {
@@ -1184,6 +1185,7 @@ static void *wait_thread(void *arg)
             sgexpo_step(P, now_ms);
             sgzmon_step(P, now_ms);
         }
+        sgjog_poll();                             /* load cell watch of a manual plate move (sgjog.c), 20 Hz */
         sgwtest_poll();                           /* Wait Times Testing sequencer (sgwtest.c), 20 Hz */
         next.tv_nsec += 50000000;                 /* 20 Hz */
         if (next.tv_nsec >= 1000000000) {

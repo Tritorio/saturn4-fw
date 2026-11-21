@@ -308,14 +308,16 @@ static void e_latch(uintptr_t P)
     non = eset.non;
     b = eset.b;
     n = eset.n;
+    if (sg_stock)                                            /* Stock Mode: the file's exposure times (no manual override, no resin profile) */
+        bon = non = 0;
     rp.th = 0;
     rp.rowi = -1;
-    if (rp.n > 0 && mode_ok) {
+    if (rp.n > 0 && mode_ok && !sg_stock) {
         rp_track(P, layer);
         if (!(bon || non))
             rp_pick();
     }
-    if (mode_ok && !(bon || non) && rp.n > 0 && rp.rowi >= 0) {   /* resin profile row of this layer's thickness */
+    if (mode_ok && !sg_stock && !(bon || non) && rp.n > 0 && rp.rowi >= 0) {   /* resin profile row of this layer's thickness */
         float rb = rp.row[rp.rowi].b, rn = rp.row[rp.rowi].n;
         if (cls == 0)
             target = rb;

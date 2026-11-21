@@ -185,6 +185,7 @@ static int matches(const char *path)
 #else
 #include "sgnoaa.c"
 #endif
+#include "sgjog.c"
 
 static void track_open(int fd, const char *path)
 {

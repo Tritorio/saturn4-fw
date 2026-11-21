@@ -66,6 +66,12 @@ static void sgtilt_dl_cmd(const char *c, char *res, size_t len);
 static void sgtilt_mode_cmd(const char *c, char *res, size_t len);
 static void sgtilt_xmove_cmd(const char *c, char *res, size_t len);
 static void sgwtest_cmd(const char *c, char *res, size_t len);
+static void sgjog_cmd(const char *c, char *res, size_t len);      /* sgjog.c: "zjog U|D UM", "zhome", "zstop", "zlim G" */
+static void sgjog_mixz_cmd(const char *c, char *res, size_t len);
+static void sglight_cmd(const char *c, char *res, size_t len);
+static void sgstock_cmd(const char *c, char *res, size_t len);
+static void sgjog_tick(int reload);
+static int sgjog_json(char *buf, size_t len);
 static int sgwtest_json(char *buf, size_t len);
 static int sgtilt_tc_get(double v[13], int *on);
 static void sgtilt_tc_set(const double v[13], int on);
@@ -364,6 +370,14 @@ static void run_cmd(const char *id, char *c)
         sgheat_cmd(c + 5, cmd_res, sizeof cmd_res);
     } else if (strncmp(c, "tl ", 3) == 0) {
         sgtl_cmd(c + 3, cmd_res, sizeof cmd_res);
+    } else if (strncmp(c, "mixz ", 5) == 0) {
+        sgjog_mixz_cmd(c + 5, cmd_res, sizeof cmd_res);
+    } else if (strncmp(c, "zjog ", 5) == 0 || strncmp(c, "zhome", 5) == 0 || strncmp(c, "zstop", 5) == 0 || strncmp(c, "zlim ", 5) == 0) {
+        sgjog_cmd(c, cmd_res, sizeof cmd_res);
+    } else if (strncmp(c, "light ", 6) == 0) {
+        sglight_cmd(c + 6, cmd_res, sizeof cmd_res);
+    } else if (strncmp(c, "stock ", 6) == 0) {
+        sgstock_cmd(c + 6, cmd_res, sizeof cmd_res);
     } else if (strncmp(c, "mix ", 4) == 0) {
         sgheat_mix_cmd(c + 4, cmd_res, sizeof cmd_res);
     } else if (strncmp(c, "waitmin2 ", 9) == 0) {
@@ -564,6 +578,8 @@ static void write_live(void)
     if (len < (int)sizeof buf)
         len += sgdisp_json(buf + len, sizeof buf - (size_t)len);
     if (len < (int)sizeof buf)
+        len += sgjog_json(buf + len, sizeof buf - (size_t)len);
+    if (len < (int)sizeof buf)
         len += snprintf(buf + len, sizeof buf - (size_t)len, "}\n");
     if (len >= (int)sizeof buf)
         return;
@@ -588,6 +604,7 @@ static void sgweb_tick(void)
         sgweb_init();
     if (ticks % 20 == 0)
         load_settings();
+    sgjog_tick(ticks % 20 == 0);                  /* first: Stock Mode is known before the tilt profile is reconciled */
     sgwait_tick(ticks % 20 == 0);
     sgtilt_tick(ticks++ % 20 == 0);
     sgsys_tick();

@@ -456,8 +456,12 @@ static const char *wt_why(void)
         return "not available";
     if (wt_ph != WT_OFF)
         return NULL;
-    if (mix_ph || z_st)
+    if (mix_ph || (z_st && z_st < 6))
         return "the resin mixing is running";
+    if (z_st)
+        return "the plate is being moved by hand";
+    if (jg_end_us && now_us() < jg_end_us + JG_SETTLE_US)
+        return "the plate was just moved by hand: wait 25 s";
     if (xm_busy && now_us() < xm_until)
         return "the tilt is moving";
     if (HW(H_PSTATE) == 10 || s_active)

@@ -1,0 +1,34 @@
+BUILD PLATE HOME / JOG, CAMERA LIGHT, MIXING HEIGHTS, STOCK MODE (mod 8.49, mods/src/sgtap/sgjog.c; chitu V1.5.9, RE 2026-11-21)
+=====================================================================================================================
+
+WHERE THE APP'S OWN FUNCTIONS WERE FOUND
+  The app's remote command table (rodata, file offset 0x2c4934, 16-byte rows: name, handler, reply builder, id) lists the commands of the
+  phone app: 0x91 "motor motion" 0xb1728, 0x92 "motor home" 0xb242c, 0x97 "motor stop" 0xb2260, 0x98 "light control" 0xb2310.
+  - motor home: the handler posts the axis names to the app's main queue; the main thread (0x19af8, message type 4) sets the printer state
+    to 7 and, for "Z": log "axis_home(AXIS_Z)", axis_stop(0) 0x535b8, axis_home(0) 0x53774 (for "X" the same with axis 1).
+  - axis_home 0x53774(axis): axis struct +0x4b = 1 (homing), +0x48 = 0, +0x49 = 1 (homing_state), then queues the moves (to the switch at
+    the speed +0x28, back off +0x34, slow approach +0x2c; Z also enables its end stops 2 / 3). It returns at once; the axis thread
+    (0x53bcc) runs them and ends with message 1: +0x48 = 1, +0x4b = 0, +0x4a (home_succeed) = (+0x49 == 3), log
+    "index %d homing_state %d home_succeed %d".
+  - light control 0xb2310: ui param 0x39fe78 + 0x13 (indicate_light_switch) = on, save_ui_params 0x68728, pwm 0x883a8(2, 100 | 0),
+    pwm(5, 100 | 0), then 0x7fb10(on) (a status message to the queue 0x2e1438). PWM table 0x2e16b0: channel 2 = (4, 200), 5 = (7, 200).
+
+WHAT THE MOD DOES
+  - zhome: axis_stop(0) + axis_home(0) from the writer thread (the printer state is left alone, as the mixing does with its moves).
+    Done when +0x4b is 0 again; success = +0x49 == 3 and +0x4a.
+  - zjog U|D UM: absolute axis_move to the position +- UM, clamped to 0 .. travel (+0x3c steps). 1 mm/s up to 1 mm, 5 mm/s above.
+  - Load cell protection in both directions and while homing: see the header of sgjog.c. The app's own guard (docs/foreign_matter_guard.txt)
+    only acts on moves down; the watch here is ours (20 Hz thread, readings at 5 Hz), so a stop comes 0.2 - 0.5 s after the load appears
+    (up to ~2.5 mm at 5 mm/s: use the small steps near anything solid).
+  - light 0|1: the same four steps as the app's handler.
+  - mixz LO HI: Z low / Z high of the resin mixing (sgheat.c), file sglog/MIXZ; "mixz default" = the old fixed heights.
+  - stock 0|1: Stock Mode, file sglog/STOCKMODE. Gates: sgwait.c begin_wait (hands off), sgexpo.c e_latch, sgtilt.c t_move /
+    gs_release_delay / dl_ready / tc_reconcile / sgtilt_slow_wait, sgmx.c "on". NOT covered (not switchable at run time): the CPU patch of
+    the UI thread (tools/patch_cpu.py, part of the image), the machine settings file (Flex Plate values, tilt currents), logging, timelapse.
+
+TEST STATUS (2026-11-21, Saturn 4 Ultra 16K, V1.5.9, files installed live over telnet + power cycle, library md5 ca19c3a6...)
+  Seen working on the printer: boot with the new library (jog / light / stock blocks in live.json, Z homed at 229.85 of 230 mm), the
+  camera light switch, jogs from the top down to 2.85 mm, and the resin mixing started after jogging (default heights 6 / 36 mm, strokes
+  counted normally). The owner reported the functions he tried as working.
+  NOT yet seen: a load cell stop on a real overload, Stop in the middle of a move, a Home started from the dashboard, custom mixing
+  heights (no MIXZ file was written), Stock Mode during a real print and across a power cycle.

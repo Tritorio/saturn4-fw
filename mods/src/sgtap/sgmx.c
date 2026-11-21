@@ -558,6 +558,10 @@ static void sgmx_cmd(const char *c, char *res, size_t len)
         return;
     }
     if (strncmp(c, "on", 2) == 0) {
+        if (sg_stock) {
+            snprintf(res, len, "error: Stock Mode is on: switch it off first");
+            return;
+        }
         if (eset.bon || eset.non) {
             snprintf(res, len, "error: Manual Exposure is on: switch it off first");
             return;
