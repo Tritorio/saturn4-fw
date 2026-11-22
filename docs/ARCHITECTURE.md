@@ -41,6 +41,7 @@ the other files into one translation unit (static, no headers).
 | `sgzmon.c` | Z monitor: print height per layer from the Z step counter and the app's Z targets; `LEVELS.csv` (Z zero found by each job's levelling) |
 | `sgmach.c` | machine settings file (live struct + app saver), Flex Plate set |
 | `sgsys.c` | CPU / RAM / storage meters |
+| `sgjog.c` | build plate Home / jog with the load cell watch, mixing heights, camera light, Stock Mode (`docs/build_plate_jog.txt`) |
 | `sgspi.c`, `sgdisp.c`, `sgmx.c`, `sgmxmask.h` | display-board link (SPI tap), LCD image / fan / UV control, **Multi Exposure** (masking the layer stream per quadrant). `sgnoaa.c` holds stand-ins when built without `-DSGTAP_AA` |
 
 ### How a patch is made safe
@@ -77,4 +78,4 @@ to `live_backup_<date>/` by convention.
 ## Kill switches
 `touch /customer/mod/<name>` then restart / power-cycle: `sgtap_disable` (whole library), `sgwebd_disable`,
 `sgheat_disable`, `sgwait_disable`, `sgexpo_disable`, `sgzmon_disable`, `sgmx_disable`, `sgtilt_disable`,
-`sgmach_disable`, `machguard_disable`, `sguisleep_disable`. Job logging off: `touch /media/mmcblk0p2/sglog/DISABLE`.
+`sgmach_disable`, `machguard_disable`, `sguisleep_disable`, `sgjog_disable` (Home / jog / light). Job logging off: `touch /media/mmcblk0p2/sglog/DISABLE`.

@@ -447,6 +447,9 @@
   #xmseg { display: flex; margin-top: 12px; }
   #xmseg button { flex: 1; padding: 10px 6px; font-size: 15px; }
   #xmseg button:disabled, .xmcustom :disabled { opacity: .45; cursor: default; }
+  #jgseg { margin-top: 10px; }
+  #jgnow { white-space: nowrap; }
+  #jgcard .xmcustom input, #mixzrow input { width: 72px; }
   .xmcustom { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
   .xmcustom label { display: flex; align-items: baseline; gap: 4px; background: var(--card2); border-radius: 8px; padding: 6px 12px; font-size: 18px; color: var(--ink2); }
   .xmcustom input { width: 64px; background: none; border: 0; border-bottom: 2px solid var(--gfill); color: var(--gtxt); font: inherit; font-size: 24px; font-weight: 500; text-align: right; font-variant-numeric: tabular-nums; }
@@ -737,6 +740,7 @@
   <div class="vonly" id="vonly"><span>View only. Log in to change settings.</span>
     <button class="qbtn" data-q="vonly" aria-expanded="false" aria-label="Show or hide the explanation" title="Explanation">?</button>
     <div class="tnote qnote" hidden>Reading stays open. Controls that write to the printer (settings, tare, tilt, profiles) need the printer password. Print control, file delete and upload use the printer's own interface and are not covered by this login.</div></div>
+  <div class="vonly" id="stockbar" hidden role="status"><span><b style="color: var(--warn)">Stock Mode is on.</b> A print runs as on the stock firmware: Dynamic wait, Wait &amp; heat, tare in the wait, Manual Exposure, resin profiles, custom tilt speeds, the two-stage fix, Dynamic lift, gauge sync, slow layers and Multi Exposure stand by (their settings are kept). The dashboard, logging, timelapse and the heating work as before. Switch: Status card.</span></div>
   <div class="chips">
     <span class="chip"><span class="dot" id="d-sdcp"></span>Printer</span>
     <span class="chip"><span class="dot" id="d-sensor"></span>Force sensor</span>
@@ -780,6 +784,8 @@
       <div><span class="label">Release film</span><b id="film">–</b></div>
     </div>
     <label class="hsw" id="camrow" hidden style="margin-top: 4px"><span>Camera <span class="sub" style="font-weight: 400">· live view</span></span><input type="checkbox" id="camsw" role="switch" aria-label="Camera live view"></label>
+    <label class="hsw" id="lightrow" hidden style="margin-top: 4px"><span>Camera light <span class="sub" style="font-weight: 400">· the printer's lighting</span></span><input type="checkbox" id="lightsw" role="switch" aria-label="Camera light"></label>
+    <label class="hsw" id="stockrow" hidden style="margin-top: 4px"><span>Stock Mode <span class="sub" style="font-weight: 400">· prints run as on the stock firmware</span></span><input type="checkbox" id="stocksw" role="switch" aria-label="Stock Mode"></label>
     <div class="sys" id="sys" hidden>
       <button id="syscpu" aria-expanded="false" aria-controls="sysui" title="UI loop sleep">
         <span class="mhead"><span class="label">CPU</span><b id="scpu">–</b></span>
@@ -839,6 +845,30 @@
     <div id="tlwarn" class="sub" style="color: var(--warn); margin-top: 4px" hidden role="alert"></div>
     <div class="tnote qnote" hidden><b>Timelapse:</b> with the switch on at the start of a job, the printer saves one camera picture per layer, taken just after the retract while the plate is at rest, and only from the layer on where the plate is above Z = 40 mm. A separate low-priority program takes them: the print timing is never changed, and a layer whose picture is not ready in time is skipped. The pictures of a job are one H.264 file in the hidden folder .timelapse on the files partition (about 200 KB per picture); download it with the time-lapse button in the Print job history card (make the video on your PC: ffmpeg -framerate 30 -i JOB.h264 -c copy JOB.mp4). The timelapses together are kept under 2 GB: when a new picture would go over, the oldest timelapse is deleted automatically and a warning shows here. Deleting a job log deletes its timelapse too.</div>
     <div class="tnote qnote" hidden>The picture is the printer's own camera, relayed by a small program on the printer (sgcam, port 8091) as a standard video stream. It starts when you open the card or switch it on and stops when you close the card, switch it off or close the page. It also runs during a print (still being tried: it adds some load on the printer, so watch the force curve and switch it off if the prints show any change). Only one viewer at a time. The camera session on the printer is always closed again. The picture is delayed by about half a second, and starts 2 to 3 seconds after opening (it waits for the next key frame). Anyone on your network can open the video address; the printer's own camera port is open to the network in the same way.</div>
+  </section>
+
+  <section class="card" id="jgcard" hidden>
+    <div class="cal-head">
+      <div style="min-width: 0"><div class="label">Build plate <span class="sub" style="text-transform: none; letter-spacing: 0">· Home and jog</span></div></div>
+      <span class="hbtns"><span class="dlpill" id="jgpill">–</span><button class="qbtn" data-q="jgcard" aria-expanded="false" aria-label="Show or hide the explanation" title="Explanation">?</button></span>
+    </div>
+    <div class="xmnow"><b id="jgnow">–</b><span class="sub" id="jgsub"></span></div>
+    <div class="seg" id="jgseg" role="group" aria-label="Step size">
+      <button data-jg="100">0.1 mm</button><button data-jg="1000">1 mm</button><button data-jg="10000">10 mm</button><button data-jg="50000">50 mm</button>
+    </div>
+    <div class="xmcustom">
+      <button class="btn" id="jgup" aria-label="Jog up">▲ Up</button>
+      <button class="btn" id="jgdown" aria-label="Jog down">▼ Down</button>
+      <button class="btn primary" id="jghome">Home</button>
+      <button class="btn danger" id="jgstop">Stop</button>
+    </div>
+    <div class="xmcustom">
+      <label><span style="font-size: 13px">Load cell limit</span><input id="jglim" type="number" min="100" max="10000" step="100" inputmode="numeric" aria-label="Load cell limit in grams"><span>g</span></label>
+      <button class="btn" id="jglimset">Set</button>
+    </div>
+    <div class="tnote" id="jgmsg"></div>
+    <div class="tnote qnote" hidden><b>Home</b> runs the printer's own homing of the Z axis (up to the top switch). <b>Up / Down</b> move the plate by the chosen step (1 mm/s up to 1 mm, 5 mm/s above), never past the ends of the axis. <b>Load cell protection:</b> during every move, also upwards and while homing, the force on the plate is watched; if it goes more than the limit beyond both the zero and the load the move started with, the motor stops at once. Moves down are also covered by the printer's own foreign matter guard. Without live force readings nothing moves. A Home that was stopped leaves Z not homed: press Home again. Only while no print, mixing or wait test is running.</div>
+    <div class="tnote" style="color: var(--warn)">Check that nothing is under or on the plate. Close to the vat use the small steps.</div>
   </section>
 
   <section class="card" id="xmcard" hidden>
@@ -1003,6 +1033,12 @@
           </div>
         </div>
         <div class="hbox"><button class="btn" id="mixgo">Start mixing</button></div>
+      </div>
+      <div class="xmcustom" id="mixzrow" style="justify-content: flex-start; margin-top: 8px">
+        <label><span style="font-size: 13px">Z low</span><input id="mixlo" type="number" min="1" max="150" step="0.5" inputmode="decimal" aria-label="Mixing Z low in mm"><span>mm</span></label>
+        <label><span style="font-size: 13px">Z high</span><input id="mixhi" type="number" min="3" max="250" step="0.5" inputmode="decimal" aria-label="Mixing Z high in mm"><span>mm</span></label>
+        <button class="btn" id="mixzset">Set heights</button>
+        <button class="btn" id="mixzdef">Default</button>
       </div>
       <div class="wnote">
         <span class="sub" id="mixz"></span>
@@ -1893,6 +1929,7 @@ function render() {
   tiltRender();
   dlRender();
   xmRender();
+  jgRender();
   zmRender();
   wtRender();
   exRender(); rpRender();
@@ -2200,13 +2237,13 @@ async function authPoll() {
 // Draft edits (dial steps, number boxes) and the controls that only open a card stay usable. Not covered: the app's own
 // print control, file delete and upload (SDCP on :3030).
 const WRITE_SEL = ["#tare", "#auto", "label:has(#auto)", "#heatapply", "#dwapply", "#dwm2", "#dwn", "#dwg2", "#dww2", "#dwng", "#uapply", "#setsave", "#setrestore", "#setdef",
-  "#dlon", "label:has(#dlon)", "#dlapply", "#dlreset", "#xmminus", "#xmplus", "#xmgo", '[data-xm]:not([data-xm="c"])', "#exapply", "#exrevert", "#exsw", "#rpsw", "label:has(#rpsw)", "#rpsave", "#rpnew", "#rpdel", "#rpadd", "#rpcancel", "label:has(#exsw)", "#mxsw", "label:has(#mxsw)", "#mxfrom", "#mxfromm", "#mxfromp", "#jlsw", "label:has(#jlsw)", "#mxstate", "#qmap input", "#qmap button", "#dwstate", "#hstate", "#gsstate", "#dlstate", "#exstate", "#fxstate", "#tcstate",
+  "#dlon", "label:has(#dlon)", "#dlapply", "#dlreset", "#xmminus", "#xmplus", "#xmgo", "#jgup", "#jgdown", "#jghome", "#jgstop", "#jglimset", "#lightsw", "label:has(#lightsw)", "#stocksw", "label:has(#stocksw)", "#mixzset", "#mixzdef", '[data-xm]:not([data-xm="c"])', "#exapply", "#exrevert", "#exsw", "#rpsw", "label:has(#rpsw)", "#rpsave", "#rpnew", "#rpdel", "#rpadd", "#rpcancel", "label:has(#exsw)", "#mxsw", "label:has(#mxsw)", "#mxfrom", "#mxfromm", "#mxfromp", "#jlsw", "label:has(#jlsw)", "#mxstate", "#qmap input", "#qmap button", "#dwstate", "#hstate", "#gsstate", "#dlstate", "#exstate", "#fxstate", "#tcstate",
   "#fxsw", "#fxoff", "#fxon", "#slapply", "#tapply", "#tcon", "label:has(#tcon)", "#gsapply", "#gssearch", "#slbeep", "label:has(#slbeep)", "#slbtest",
   "#slsave", "#sldel", "#hdel", "#htldel", "#mapply", "#calopen", "#calapply", "#logall", "#pwchange", "#stockrestore",
   "#plist button[data-pa]", "#mbaks button[data-restore]", "#mbaks button[data-delbak]", "#tlsw", "#featlist [data-sw]", "#featlist [data-note]", "#featlist label.fnote"].join(",");
 // The cards made for writing are greyed as a whole while logged out, except their graphs (canvas / svg role="img"): a block of the card
 // that holds no graph is greyed, the graph and the path to it stay. The other controls (Force card, Features list) are greyed one by one.
-const WRITE_CARDS = "#xmcard, #wtcard, #excard, #rpcard, #mxcard, #fxcard, #heatcard, #dwcard, #gscard, #dlcard, #tiltcard, #slsetcard, #slowcard, #setcard, #machcard";
+const WRITE_CARDS = "#jgcard, #xmcard, #wtcard, #excard, #rpcard, #mxcard, #fxcard, #heatcard, #dwcard, #gscard, #dlcard, #tiltcard, #slsetcard, #slowcard, #setcard, #machcard";
 const GFX = 'canvas, svg[role="img"]', GREY = "opacity: .45; filter: grayscale(.8);";
 document.head.insertAdjacentHTML("beforeend", `<style>
   body.out :is(${WRITE_SEL}):not(:is(${WRITE_CARDS}) *) { opacity: .45; cursor: default; }
@@ -2332,7 +2369,13 @@ function heatRender() {
   $("mixgo").textContent = mixing ? "Stop mixing" : "Start mixing";
   $("mixgo").className = "btn" + (mixing ? " danger" : "");
   $("mixgo").disabled = HT.busy || (!mixing && (H.printing || !!H.zmove));
-  $("mixz").textContent = H.mixlo !== undefined ? `Z low ${H.mixlo.toFixed(1)} mm · Z high ${H.mixhi.toFixed(1)} mm` : "";
+  $("mixz").textContent = H.mixlo !== undefined ? `Z low ${H.mixlo.toFixed(1)} mm · Z high ${H.mixhi.toFixed(1)} mm` + (L && L.jog ? (L.jog.mixset ? " (set here)" : " (default)") : "") : "";
+  $("mixzrow").hidden = !(L && L.jog);                      // settable heights need the library with "mixz"
+  if (H.mixlo !== undefined && !MZ.dirty) {
+    if (document.activeElement !== $("mixlo")) $("mixlo").value = +H.mixlo.toFixed(1);
+    if (document.activeElement !== $("mixhi")) $("mixhi").value = +H.mixhi.toFixed(1);
+  }
+  for (const id of ["mixlo", "mixhi", "mixzset", "mixzdef"]) $(id).disabled = mixing || MZ.busy;
   $("hzmsg").textContent = mixing ? (H.mix === 1 ? "going to Z low" : `${fmtT(Math.max(0, H.mixleft) * 1000)} left · stroke ${H.mixn + 1}`) : H.zmsg ? "Plate: " + H.zmsg : "";
   for (const p of document.querySelectorAll("#heatcard .presets")) {
     const v = +$(p.dataset.t).value;
@@ -2377,6 +2420,20 @@ for (const id of ["htpre", "htprint"]) {
 $("hpre").addEventListener("change", heatRender);
 $("hmin").addEventListener("change", () => { $("hmin").value = Math.max(1, Math.floor(+$("hmin").value) || 10); try { localStorage.sgmixmin = $("hmin").value; } catch (e) {} });
 try { if (localStorage.sgmixmin) $("hmin").value = localStorage.sgmixmin; } catch (e) {}
+const MZ = {dirty: false, busy: false};                    // mixing heights (Z low / Z high): "mixz LO HI" | "mixz default"
+for (const id of ["mixlo", "mixhi"]) $(id).addEventListener("input", () => { MZ.dirty = true; });
+async function mixzSend(line, ok) {
+  MZ.busy = true;
+  try { await cmd(line); MZ.dirty = false; toast(ok); } catch (e) { toast("Mixing heights: " + e.message, true); }
+  MZ.busy = false; heatRender();
+}
+$("mixzset").addEventListener("click", () => {
+  const lo = Math.round(parseFloat($("mixlo").value) * 10) / 10, hi = Math.round(parseFloat($("mixhi").value) * 10) / 10;
+  if (!(lo >= 1 && lo <= 150)) return toast("Mixing heights: Z low must be 1 to 150 mm", true);
+  if (!(hi >= lo + 2)) return toast("Mixing heights: Z high must be at least Z low + 2 mm", true);
+  mixzSend(`mixz ${lo.toFixed(1)} ${hi.toFixed(1)}`, `Mixing between ${lo.toFixed(1)} and ${hi.toFixed(1)} mm`);
+});
+$("mixzdef").addEventListener("click", () => mixzSend("mixz default", "Mixing heights back to the default"));
 $("mixgo").addEventListener("click", async () => {
   const H = heat(); if (!H) return;
   const min = Math.max(1, Math.floor(+$("hmin").value) || 10);
@@ -3215,6 +3272,60 @@ setInterval(() => {
   if (!CAM.probed || (!CAM.avail && Date.now() - CAM.probed > 30000)) camProbe();
   if (CAM.open && CAM.avail && Date.now() - TLS.t > 3000) tlPoll();
 }, 1000);
+// ---------- Build plate: Home / jog with load cell protection ("zhome", "zjog U|D UM", "zstop", "zlim G"), camera light ("light 0|1"),
+// Stock Mode ("stock 0|1"). live.json "jog", "light", "stock" (libsgtap sgjog.c) ----------
+const JG = {step: 1000, busy: false, sw: false};
+try { if (+localStorage.sgjogstep) JG.step = +localStorage.sgjogstep; } catch (e) {}
+function jgRender() {
+  const J = L && L.jog, S = L && L.stock, T = L && L.light;
+  $("lightrow").hidden = !T; $("stockrow").hidden = !S; $("stockbar").hidden = !(S && S.on);
+  if (!JG.sw) { if (T) $("lightsw").checked = !!T.on; if (S) $("stocksw").checked = !!S.on; }
+  $("lightsw").disabled = $("stocksw").disabled = JG.sw;
+  $("jgcard").hidden = !(J && J.ok);
+  if (!J || !J.ok) return;
+  const moving = !!J.st, free = !moving && !J.why && !JG.busy;
+  $("jgnow").textContent = J.pos.toFixed(2) + " mm";
+  $("jgpill").textContent = J.st === 2 ? "HOMING" : moving ? "MOVING" : J.why ? "LOCKED" : !J.homed ? "NOT HOMED" : "READY";
+  $("jgpill").className = "dlpill" + (moving || (!J.why && !J.homed) ? " red" : !J.why ? " on" : "");
+  $("jgsub").textContent = J.why && !moving ? `locked: ${J.why}` : `of ${J.max.toFixed(0)} mm` + (J.g !== null ? ` · force ${J.g} g` : " · no force readings") + ` · stops at ±${J.lim} g`;
+  $("jgmsg").textContent = J.msg ? "Plate: " + J.msg : !J.homed ? "Z is not homed: press Home first." : !J.armed ? "Down is locked until the printer has calibrated its force sensor (about a minute after power-on)." : "";
+  for (const b of $("jgseg").querySelectorAll("button")) b.classList.toggle("on", +b.dataset.jg === JG.step);
+  $("jgup").disabled = !(free && J.homed);
+  $("jgdown").disabled = !(free && J.homed && J.armed);
+  $("jghome").disabled = !free;
+  $("jgstop").disabled = !moving;
+  $("jglimset").disabled = $("jglim").disabled = moving || JG.busy;
+  if (document.activeElement !== $("jglim") && !JG.limDirty) $("jglim").value = J.lim;
+}
+async function jgSend(line, ok) {
+  JG.busy = true; jgRender();
+  try { await cmd(line); if (ok) toast(ok); } catch (e) { toast("Build plate: " + e.message, true); }
+  JG.busy = false; jgRender();
+}
+$("jgseg").addEventListener("click", e => {
+  const b = e.target.closest("button[data-jg]"); if (!b) return;
+  JG.step = +b.dataset.jg; try { localStorage.sgjogstep = JG.step; } catch (e2) {}
+  jgRender();
+});
+$("jgup").addEventListener("click", () => jgSend(`zjog U ${JG.step}`));
+$("jgdown").addEventListener("click", () => jgSend(`zjog D ${JG.step}`));
+$("jghome").addEventListener("click", () => jgSend("zhome", "Homing the build plate"));
+$("jgstop").addEventListener("click", async () => { try { await cmd("zstop"); toast("Plate stopped"); } catch (e) { toast("Build plate: " + e.message, true); } });
+$("jglim").addEventListener("input", () => { JG.limDirty = true; });
+$("jglimset").addEventListener("click", async () => {
+  const g = Math.round(+$("jglim").value);
+  if (!(g >= 100 && g <= 10000)) return toast("Build plate: the limit must be 100 to 10000 g", true);
+  await jgSend("zlim " + g, `Load cell limit ${g} g`); JG.limDirty = false; jgRender();
+});
+async function jgSwitch(el, line, okOn, okOff, name) {
+  const want = el.checked;
+  JG.sw = true; jgRender();
+  try { await cmd(`${line} ${want ? 1 : 0}`); toast(want ? okOn : okOff); } catch (e) { toast(name + ": " + e.message, true); el.checked = !want; }
+  JG.sw = false;
+}
+$("lightsw").addEventListener("change", () => jgSwitch($("lightsw"), "light", "Camera light on", "Camera light off", "Camera light"));
+$("stocksw").addEventListener("change", () => jgSwitch($("stocksw"), "stock", "Stock Mode on: prints run as on the stock firmware", "Stock Mode off: the mod's functions act again", "Stock Mode"));
+
 // ---------- X Move (manual tilt, a test tool): "xmove DEG", 0-140, printer idle only ----------
 const XM = {open: false, sel: "c", val: null, busy: false};
 const xmClamp = v => Math.max(0, Math.min(140, v));

@@ -272,7 +272,7 @@ static void gs_release_delay(void)
     uint64_t now, last, tgt;
     double dt, need, k, off;
     struct timespec ts;
-    if (!gs.on || HW(H_PSTATE) != 10)
+    if (!gs.on || sg_stock || HW(H_PSTATE) != 10)
         return;
     if (!s_active || s_layer < 0 || (strcmp(s_phase, "rest") != 0 && strcmp(s_phase, "exposure") != 0))
         return;                        /* only the release of a layer: not the start-up moves (probe, level, homing) */
@@ -719,7 +719,7 @@ static int dl_app_layer(void)
 
 static int dl_ready(void)
 {
-    return dl_cfg.on && t_on && t_installed && tp_ok && h_ok && w_ok && HW(H_PSTATE) == 10 && !sl.active &&
+    return dl_cfg.on && !sg_stock && t_on && t_installed && tp_ok && h_ok && w_ok && HW(H_PSTATE) == 10 && !sl.active &&
            (dl_cfg.start <= 1 || dl_app_layer() + 1 >= dl_cfg.start);     /* before the start layer the set speeds are used as they are */
 }
 
@@ -898,9 +898,9 @@ static int t_move(int idx, int32_t step, uint32_t speed, int wait)
     /* gauge sync: hold the start of a release (a positive move that is not the stage 2 of a release) for the poll clock.
      * NB the chip's XACTUAL is -19911 at rest and 0 at the end of the release (tilt trace ), so the start cannot
      * be told from the position. */
-    if (idx == T_IDX && t_on && step > 200 && !(!wait && t_st1.armed && ms - t_st1.ms <= T_ARM_MS))
+    if (idx == T_IDX && t_on && !sg_stock && step > 200 && !(!wait && t_st1.armed && ms - t_st1.ms <= T_ARM_MS))
         gs_release_delay();
-    if (idx != T_IDX || !t_on) {
+    if (idx != T_IDX || !t_on || sg_stock) {      /* Stock Mode: every move is the stock move */
         if (idx == T_IDX)
             tcsv_note(step, speed, 0, wait);
         t_lock_spi();                  /* a pending switch belongs to an older move */
@@ -1273,7 +1273,7 @@ static void tc_reconcile(void)
     if (!tc_have || sl.active)         /* the live profile holds the slow set while a slow layer runs */
         return;
     pthread_mutex_lock(&t_lock);
-    memcpy(want, (tc_on || dl_cfg.on) ? tc_v : tp_stock, sizeof want);
+    memcpy(want, !sg_stock && (tc_on || dl_cfg.on) ? tc_v : tp_stock, sizeof want);   /* Stock Mode: the stock profile */
     if (tp_req.pending && tc_same(tp_req.v, want)) {
         pthread_mutex_unlock(&t_lock);
         return;                        /* already waiting to be applied */
@@ -1725,6 +1725,12 @@ static void sgtilt_slow_wait(int layer0)
     uint32_t pr = HW(T_PROFPTR);
     if (!tp_ok || !h_ok)
         return;
+    if (sg_stock) {                               /* Stock Mode: no slow layers (and no beep); a slow set still in the profile goes back */
+        pthread_mutex_lock(&sl_lock);
+        sl_restore();
+        pthread_mutex_unlock(&sl_lock);
+        return;
+    }
     sl_read_list();
     pthread_mutex_lock(&sl_lock);
     if (layer0 + 1 <= sl.layer)                   /* a new print */
@@ -2262,7 +2268,7 @@ static int sgtilt_json(char *buf, size_t len)
     }
     if (n < (int)len && tp_ok) {       /* the custom profile of the Tilt speed card: cust = switch, eff = used now (switch or Dynamic lift) */
         pthread_mutex_lock(&t_lock);
-        n += snprintf(buf + n, len - (size_t)n, ",\"cust\":%d,\"eff\":%d,\"cv\":[", tc_on, tc_on || dl_cfg.on);
+        n += snprintf(buf + n, len - (size_t)n, ",\"cust\":%d,\"eff\":%d,\"cv\":[", tc_on, !sg_stock && (tc_on || dl_cfg.on));
         for (int i = 0; i < 13 && n < (int)len; i++)
             n += snprintf(buf + n, len - (size_t)n, "%s%d", i ? "," : "", (int)tc_v[i]);
         if (n < (int)len)
